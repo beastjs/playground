@@ -1,0 +1,44 @@
+// DASHBOARD
+import { useMemo } from "octane";
+module
+  type Range = "24h" | "7d" | "30d";
+  interface Metric {
+    id: string;
+    label: string;
+    value: number;
+    delta: number;
+  }
+props { metrics, range, onRangeChange }: { metrics: Metric[]; range: Range; onRangeChange: (next: Range) => void }
+setup const ranges: Range[] = ["24h", "7d", "30d"];
+setup const total = useMemo(() => metrics.reduce((sum, m) => sum + m.value, 0), [metrics]);
+main#dashboard.shell
+  header(className="flex items-center justify-between gap-6 border-b border-black/10 px-6 py-4")
+    h1#dashboard-title.title Overview
+    nav(
+      ~ className="inline-flex items-center rounded-full bg-neutral-100 p-1"
+      ~ role="tablist"
+      ~ aria-label="Time range"
+      ~ )
+      each r in ranges key r
+        button(
+          ~ type="button"
+          ~ role="tab"
+          ~ aria-selected={r === range}
+          ~ onClick={() => onRangeChange(r)}
+          ~ className={r === range ? "rounded-full bg-white px-4 py-2 text-sm font-semibold shadow" : "rounded-full px-4 py-2 text-sm text-neutral-500"}
+          ~ )
+          | #{r}
+  section(className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4")
+    each metric in metrics key metric.id
+      article(className="rounded-2xl border border-black/10 bg-white p-5")
+        p.eyebrow #{metric.label}
+        strong.value #{metric.value}
+        if metric.delta > 0
+          span.up +#{metric.delta}%
+        elseif metric.delta < 0
+          span.down #{metric.delta}%
+        else
+          span.flat flat
+  if metrics.length === 0
+    p.empty No metrics for this range.
+  footer.total Total: #{total}

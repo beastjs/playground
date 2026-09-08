@@ -1,0 +1,4 @@
+interface:
+  display_name: "Beast"
+  short_description: "Build, debug, and navigate Beast BTSX apps"
+  default_prompt: "Use $beast to build or maintain this Beast BTSX application."

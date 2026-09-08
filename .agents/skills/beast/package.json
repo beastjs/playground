@@ -1,0 +1,32 @@
+{
+  "name": "beast-skill",
+  "version": "0.3.1",
+  "private": true,
+  "description": "Agent skill for authoring, debugging, navigating, and shipping Beast BTSX → TSRX → Octane apps",
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.22.2"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "sync:skill": "node scripts/sync-installed-skill.cjs",
+    "check:skill-sync": "node scripts/sync-installed-skill.cjs --check",
+    "test": "echo \"no tests yet\" && exit 0",
+    "check": "npm run typecheck && npm run check:skill-sync"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "beast",
+    "btsx",
+    "tsrx",
+    "octane",
+    "vite",
+    "language-server",
+    "lsp",
+    "skill"
+  ]
+}

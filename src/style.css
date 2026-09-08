@@ -1,0 +1,163 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono&display=swap');
+@import 'tailwindcss';
+
+@font-face {
+  font-family: 'IOS';
+  src: url('../public/fonts/IoskeleyMono-Regular.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+:root {
+  color: #161616;
+  background: #ececeb;
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.92), transparent 34rem), #ececeb;
+}
+
+button,
+a {
+  font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Code panes: a Shiki-highlighted layer sitting under a transparent textarea.
+   Both layers must use identical metrics or the caret drifts from the text, so
+   the font, padding and wrapping are declared once here and inherited by both. */
+.code-surface,
+.code-surface textarea,
+.code-surface pre,
+.code-surface code {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.625;
+  tab-size: 2;
+}
+
+.code-surface textarea,
+.code-surface pre {
+  margin: 0;
+  padding: 1rem;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* The textarea's native scrollbar would shrink its content box relative to the
+   highlighted layer, so identical text would wrap at different columns. Hiding
+   it keeps both content widths equal; the textarea still scrolls, and
+   syncScroll drives the layer to match. */
+.code-surface textarea {
+  scrollbar-width: none;
+}
+
+.code-surface textarea::-webkit-scrollbar {
+  display: none;
+}
+
+/* Shiki inlines its theme background; the panel provides its own. */
+.code-surface pre.shiki {
+  background-color: transparent !important;
+}
+
+/* Mobile panel carousel.
+   Horizontal paging is native scroll-snap rather than a JS drag handler, which
+   is what keeps vertical scrolling inside a panel working: the browser picks
+   the axis per gesture, so a mostly-vertical drag scrolls the code pane and a
+   mostly-horizontal one pages between panels. A JS handler would have to
+   re-implement that disambiguation and would fight the inner scroller. */
+.panel-carousel {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.panel-carousel::-webkit-scrollbar {
+  display: none;
+}
+
+.panel-slide {
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: center;
+}
+
+/* Mouse-drag paging affordance. Coarse pointers page natively and must not get
+   a grab cursor or lose text selection. */
+@media (pointer: fine) {
+  .panel-carousel {
+    cursor: grab;
+  }
+
+  .panel-carousel[data-dragging='true'] {
+    cursor: grabbing;
+    user-select: none;
+  }
+}
+
+/* Desktop resize handle. The Separator is a plain element until it is given a
+   size, so without this there is nothing to grab. */
+.panel-separator {
+  position: relative;
+  flex: 0 0 auto;
+  width: 10px;
+  cursor: col-resize;
+  border-radius: 9999px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.panel-separator::after {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 3px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  background: rgba(22, 22, 22, 0.16);
+}
+
+.panel-separator:hover,
+.panel-separator[data-dragging='true'] {
+  background: rgba(22, 22, 22, 0.05);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .panel-carousel {
+    scroll-behavior: smooth;
+  }
+}

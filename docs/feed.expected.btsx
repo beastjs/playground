@@ -1,0 +1,57 @@
+// FEED
+import { createContext, use, useState } from "octane";
+module
+  type Status = "idle" | "loading" | "error";
+  interface Post {
+    id: string;
+    author: { name: string; avatar: string };
+    body: string;
+    tags: string[];
+    likes: number;
+  }
+  const Locale = createContext<string>("en");
+component Avatar
+  props { user }: { user: Post["author"] }
+  img.avatar(src={user.avatar} alt={user.name} loading="lazy")
+component Tags
+  props { tags }: { tags: string[] }
+  ul.tags
+    each tag in tags key tag
+      li.tag ##{tag}
+component Empty
+  p.empty Nothing to read yet.
+props { posts, status, onRetry }: { posts: Post[]; status: Status; onRetry: () => void }
+setup const locale = use(Locale);
+setup const [expanded, setExpanded] = useState<string | null>(null);
+section#feed.feed(aria-busy={status === "loading"} lang={locale})
+  if status === "loading"
+    p.skeleton Loading...
+  elseif status === "error"
+    .error(role="alert")
+      p Something went wrong.
+      button(type="button" onClick={onRetry}) Retry
+  elseif posts.length === 0
+    Empty
+  else
+    ol.posts
+      each post in posts key post.id
+        li.post
+          Avatar(user={post.author})
+          h3.author #{post.author.name}
+          p.body
+            if expanded === post.id
+              #{post.body}
+            else
+              #{post.body.slice(0, 140)}
+          Tags(tags={post.tags})
+          footer.meta
+            button(
+              ~ type="button"
+              ~ aria-expanded={expanded === post.id}
+              ~ onClick={() => setExpanded(expanded === post.id ? null : post.id)}
+              ~ )
+              if expanded === post.id
+                #{"Show less"}
+              else
+                #{"Show more"}
+            span.likes #{post.likes} likes

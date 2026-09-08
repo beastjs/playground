@@ -1,0 +1,12 @@
+props { user, unreadCount, messages }: { user: { name: string; id: string; isAdmin: boolean }; unreadCount: number; messages: { id: string; text: string }[] }
+.card
+  .header
+    h1 Welcome, #{user.name}
+  .body
+    if user.isAdmin
+      AdminPanel(userId={user.id})
+    else
+      p You have #{unreadCount} new messages
+    ul.messages
+      each message, i in messages key message.id
+        li.message #{message.text}

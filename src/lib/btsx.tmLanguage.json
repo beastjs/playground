@@ -1,0 +1,122 @@
+{
+  "scopeName": "source.btsx",
+  "name": "Beast BTSX",
+  "fileTypes": ["btsx"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#componentDeclaration" },
+    { "include": "#eachVariable" },
+    { "include": "#keyword" },
+    { "include": "#pipeText" },
+    { "include": "#interpolation" },
+    { "include": "#expression" },
+    { "include": "#selector" },
+    { "include": "#attribute" },
+    { "include": "#string" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.line.double-slash.btsx",
+      "match": "//.*$"
+    },
+    "keyword": {
+      "name": "keyword.other.btsx",
+      "match": "\\b(import|module|component|props|setup|if|elseif|else|each|in|key|empty|switch|case|default|try|pending|catch)\\b"
+    },
+    "componentDeclaration": {
+      "name": "meta.component.btsx",
+      "begin": "\\b(component)\\s+",
+      "beginCaptures": { "1": { "name": "keyword.other.btsx" } },
+      "end": "(?=$|[\\r\\n])",
+      "patterns": [{ "name": "entity.name.function.component.btsx", "match": "[A-Za-z_][A-Za-z0-9_]*" }]
+    },
+    "eachVariable": {
+      "name": "meta.each.btsx",
+      "begin": "\\b(each)\\b",
+      "beginCaptures": { "1": { "name": "keyword.other.btsx" } },
+      "end": "\\b(in)\\b",
+      "endCaptures": { "1": { "name": "keyword.other.btsx" } },
+      "patterns": [
+        { "name": "variable.parameter.btsx", "match": "[A-Za-z_][A-Za-z0-9_]*" },
+        { "name": "punctuation.separator.comma.btsx", "match": "," }
+      ]
+    },
+    "pipeText": {
+      "name": "punctuation.definition.text.pipe.btsx",
+      "match": "^[ \\t]*\\|"
+    },
+    "interpolation": {
+      "name": "meta.interpolation.btsx",
+      "begin": "#\\{",
+      "beginCaptures": { "0": { "name": "punctuation.definition.interpolation.btsx" } },
+      "end": "\\}",
+      "endCaptures": { "0": { "name": "punctuation.definition.interpolation.btsx" } },
+      "patterns": [{ "include": "source.ts" }]
+    },
+    "expression": {
+      "name": "meta.expression.btsx",
+      "begin": "\\{",
+      "beginCaptures": { "0": { "name": "punctuation.section.braces.btsx" } },
+      "end": "\\}",
+      "endCaptures": { "0": { "name": "punctuation.section.braces.btsx" } },
+      "patterns": [{ "include": "source.ts" }]
+    },
+    "selector": {
+      "patterns": [
+        {
+          "name": "entity.name.tag.btsx",
+          "match": "(?:^[ \\t]*|(?<=\\s))(?:[a-z][a-z0-9-]*)\\b(?=[\\.#\\(\\s]|$)"
+        },
+        {
+          "name": "entity.name.type.component.btsx",
+          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        },
+        {
+          "name": "punctuation.separator.dot.btsx",
+          "match": "\\.(?=[A-Za-z0-9_#-])"
+        },
+        {
+          "name": "punctuation.definition.tag.id.btsx",
+          "match": "#"
+        },
+        {
+          "name": "entity.other.attribute-name.class.btsx",
+          "match": "(?<=\\.)[A-Za-z0-9_-]+"
+        },
+        {
+          "name": "entity.other.attribute-name.id.btsx",
+          "match": "(?<=#)[A-Za-z0-9_-]+"
+        }
+      ]
+    },
+    "attribute": {
+      "name": "meta.attribute.btsx",
+      "patterns": [
+        { "include": "#string" },
+        {
+          "name": "entity.other.attribute-name.btsx",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_-]*\\b(?=\\s*(?:=|\\s|,|\\)))"
+        },
+        { "name": "keyword.operator.assignment.btsx", "match": "=" },
+        { "name": "punctuation.section.parens.btsx", "match": "[()]" },
+        { "name": "punctuation.separator.comma.btsx", "match": "," }
+      ]
+    },
+    "string": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.btsx",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [{ "name": "constant.character.escape.btsx", "match": "\\\\." }]
+        },
+        {
+          "name": "string.quoted.single.btsx",
+          "begin": "'",
+          "end": "'",
+          "patterns": [{ "name": "constant.character.escape.btsx", "match": "\\\\." }]
+        }
+      ]
+    }
+  }
+}
