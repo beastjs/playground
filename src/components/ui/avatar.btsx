@@ -1,0 +1,39 @@
+import type { ComponentProps } from "octane";
+import {Avatar as A} from "@octanejs/radix";
+import { cn } from "@/lib/utils";
+
+module
+  type AvatarProps = ComponentProps<typeof A.Root> & {
+    src?: string;
+    alt?: string;
+    fallback?: string;
+  }
+  export const Avatar = {
+    Image: Image,
+    Fallback: Fallback
+  }
+
+
+component Image
+  props { className, ...props }: ComponentProps<typeof A.Image>
+  A.Image(
+    ~ data-slot="avatar-image"
+    ~ className={cn("aspect-square size-full", className)}
+    ~ {...props}
+    ~ )
+component Fallback
+  props { className, ...props }: ComponentProps<typeof A.Fallback>
+  A.Fallback(
+    ~ data-slot="avatar-fallback"
+    ~ className={cn("bg-site-muted text-site-foreground site-rounded-full flex size-full items-center justify-center font-medium", className)}
+    ~ {...props}
+    ~ )
+props {className, src, alt, fallback, ...props}:AvatarProps
+A.Root(
+  ~ data-slot="avatar"
+  ~ className={cn("relative flex size-10 shrink-0 overflow-hidden rounded-full", className)}
+  ~ {...props}
+  ~ )
+  Image(src={src} alt={alt})
+  if fallback
+    Fallback #{fallback}

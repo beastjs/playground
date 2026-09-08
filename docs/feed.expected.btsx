@@ -21,8 +21,9 @@ component Tags
 component Empty
   p.empty Nothing to read yet.
 props { posts, status, onRetry }: { posts: Post[]; status: Status; onRetry: () => void }
-setup const locale = use(Locale);
-setup const [expanded, setExpanded] = useState<string | null>(null);
+setup
+  const locale = use(Locale);
+  const [expanded, setExpanded] = useState<string | null>(null);
 section#feed.feed(aria-busy={status === "loading"} lang={locale})
   if status === "loading"
     p.skeleton Loading...
@@ -40,9 +41,9 @@ section#feed.feed(aria-busy={status === "loading"} lang={locale})
           h3.author #{post.author.name}
           p.body
             if expanded === post.id
-              #{post.body}
+              | #{post.body}
             else
-              #{post.body.slice(0, 140)}
+              | #{post.body.slice(0, 140)}
           Tags(tags={post.tags})
           footer.meta
             button(
@@ -51,7 +52,7 @@ section#feed.feed(aria-busy={status === "loading"} lang={locale})
               ~ onClick={() => setExpanded(expanded === post.id ? null : post.id)}
               ~ )
               if expanded === post.id
-                #{"Show less"}
+                | #{"Show less"}
               else
-                #{"Show more"}
+                | #{"Show more"}
             span.likes #{post.likes} likes

@@ -268,10 +268,93 @@ export default function Feed({ posts, status, onRetry }: { posts: Post[]; status
 }
 `
 
+const boundary = `// BOUNDARY
+import { ErrorBoundary, Suspense, use, type ReactNode } from 'react'
+
+type Status = 'draft' | 'review' | 'live' | 'archived'
+
+interface Report {
+  id: string
+  title: string
+  status: Status
+  rows: { id: string; label: string; value: number }[]
+}
+
+function StatusBadge({ status }: { status: Status }) {
+  return (
+    <span className='badge' data-status={status}>
+      {(() => {
+        switch (status) {
+          case 'draft': return <em>Draft</em>
+          case 'review':
+          case 'live': return <strong>Published</strong>
+          default: return <s>Archived</s>
+        }
+      })()}
+    </span>
+  )
+}
+
+function ReportTable({ report }: { report: PromiseLike<Report> }) {
+  const resolved = use(report)
+  return (
+    <table className='table'>
+      <tbody>
+        {resolved.rows.map(({ id, label, value }) => (
+          <tr key={id}>
+            <td className='label'>{label}</td>
+            <td className='value'>{value}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+export default function BoundaryPanel({ report, title }: { report: PromiseLike<Report>; title: string }) {
+  return (
+    <>
+      <section className='panel'>
+        <header className='head'>
+          <h2>{title}</h2>
+          <StatusBadge status='review' />
+        </header>
+        <ErrorBoundary fallback={(error, reset) => (
+          <div className='error' role='alert'>
+            <p>Could not load the report: {error.message}</p>
+            <button type='button' onClick={reset}>Try again</button>
+          </div>
+        )}>
+          <Suspense fallback={<p role='status'>Loading report…</p>}>
+            <ReportTable report={report} />
+          </Suspense>
+        </ErrorBoundary>
+      </section>
+      <style>{\`
+        .panel {
+          border-radius: 1rem;
+          padding: 1.5rem;
+        }
+
+        .panel .head {
+          display: flex;
+          justify-content: space-between;
+        }
+
+        :global(body) {
+          margin: 0;
+        }
+      \`}</style>
+    </>
+  )
+}
+`;
+
 export const SAMPLES: Sample[] = [
   { id: 'card', label: 'Card', tsx: card },
   { id: 'provider', label: 'Provider', tsx: provider },
   { id: 'dashboard', label: 'Dashboard', tsx: dashboard },
   { id: 'palette', label: 'Palette', tsx: palette },
-  { id: 'feed', label: 'Feed', tsx: feed }
+  { id: 'feed', label: 'Feed', tsx: feed },
+  { id: 'boundary', label: 'Boundary', tsx: boundary }
 ]

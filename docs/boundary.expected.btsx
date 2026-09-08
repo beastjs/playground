@@ -1,0 +1,59 @@
+// BOUNDARY
+import { ErrorBoundary, Suspense, use } from "octane";
+module
+  type Status = "draft" | "review" | "live" | "archived";
+  interface Report {
+    id: string;
+    title: string;
+    status: Status;
+    rows: { id: string; label: string; value: number }[];
+  }
+component StatusBadge
+  props { status }: { status: Status }
+  span.badge(data-status={status})
+    switch status
+      case "draft"
+        em Draft
+      case "review", "live"
+        strong Published
+      default
+        s Archived
+component ReportTable
+  props { report }: { report: PromiseLike<Report> }
+  setup const resolved = use(report);
+  table.table
+    tbody
+      each item in resolved.rows
+        scope
+          setup const { id, label, value } = item;
+          tr(key={id})
+            td.label #{label}
+            td.value #{value}
+props { report, title }: { report: PromiseLike<Report>; title: string }
+fragment
+  section.panel
+    header.head
+      h2 #{title}
+      StatusBadge(status="review")
+    try
+      ReportTable(report={report})
+    pending
+      p(role="status") Loading report…
+    catch error, reset
+      .error(role="alert")
+        p Could not load the report: #{error.message}
+        button(type="button" onClick={reset}) Try again
+  style
+    .panel {
+      border-radius: 1rem;
+      padding: 1.5rem;
+    }
+
+    .panel .head {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    :global(body) {
+      margin: 0;
+    }

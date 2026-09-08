@@ -6,6 +6,7 @@
       "name": "beast-converter",
       "dependencies": {
         "@octanejs/base-ui": "0.1.51",
+        "@octanejs/radix": "^0.1.52",
         "@octanejs/resizable-panels": "^0.0.10",
         "beast-tsrx": "latest",
         "clsx": "^2.1.1",
@@ -66,6 +67,8 @@
     "@octanejs/base-ui-utils": ["@octanejs/base-ui-utils@0.1.1", "", { "dependencies": { "@floating-ui/utils": "^0.2.12", "reselect": "^5.2.0" }, "peerDependencies": { "octane": "^0.2.5" } }, "sha512-IVy4T1dHhEvo0tSYgCSESziLzN+Q4zwuW7Hjyq+YPbdtJlR/mwyPncl/eKu0nWplHexWPuRv+HZjiJ8gC2Oe0Q=="],
 
     "@octanejs/floating-ui": ["@octanejs/floating-ui@0.1.52", "", { "dependencies": { "@floating-ui/dom": "^1.8.0", "@floating-ui/utils": "^0.2.12", "tabbable": "^6.5.0" }, "peerDependencies": { "octane": "^0.1.51 || ^0.2.0" } }, "sha512-vNV5FfRPD7urZ1Ntl9dpBx2cVOpmwdpeKWtuNpGVVuGsMGjZKigWSX4pzmSEXNS1/gCD2Ey/ZY9zB+xlLgZolA=="],
+
+    "@octanejs/radix": ["@octanejs/radix@0.1.52", "", { "dependencies": { "@octanejs/floating-ui": "0.1.52", "aria-hidden": "^1.2.6" }, "peerDependencies": { "octane": "^0.1.51 || ^0.2.0" } }, "sha512-jDlI5FwkJl2umKxFXc6i1O/QIe8JRdEAmzws9bNQtdzxcsoW+8zJxlB5zX4jByCvplWPEP9E/uFQnAkBOgQVMQ=="],
 
     "@octanejs/resizable-panels": ["@octanejs/resizable-panels@0.0.10", "", { "peerDependencies": { "octane": "^0.1.51 || ^0.2.0" } }, "sha512-XMBfOFkXASLCS4JAn+Zu4hy0cu4LK6mCRt/+8vtuHsm1gt8fzrORkxR8vNm+ZB9fSvreG+90KA+DhS/H8evBEQ=="],
 
@@ -298,6 +301,8 @@
     "alien-signals": ["alien-signals@3.2.0", "", {}, "sha512-5J9+NpCLHgic4xnZtI8SznvNagwJsZSvRFsAwoLlLw+Edaqa4upCiOC19P8Vx2DqmEvqK2qJBMtI8+9eXOEb/A=="],
 
     "argparse": ["argparse@2.0.1", "", {}, "sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q=="],
+
+    "aria-hidden": ["aria-hidden@1.2.6", "", { "dependencies": { "tslib": "^2.0.0" } }, "sha512-ik3ZgC9dY/lYVVM++OISsaYDeg1tb0VtP5uL3ouh1koGOaUMDPpbFIei4JkFimWUFPn90sbMNMXQAIVOlnYKJA=="],
 
     "beast-tsrx": ["beast-tsrx@0.2.60", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.13", "@jridgewell/remapping": "^2.3.5", "entities": "^7.0.1" }, "peerDependencies": { "@octanejs/rsbuild-plugin": "0.1.48", "@octanejs/rspack-plugin": "0.1.48", "@rsbuild/core": "^2.0.0", "@rspack/core": "^2.0.0", "octane": "0.2.6", "vite": "^8.0.16" }, "optionalPeers": ["@octanejs/rsbuild-plugin", "@octanejs/rspack-plugin", "@rsbuild/core", "@rspack/core", "octane", "vite"], "bin": { "beast": "dist/cli.js" } }, "sha512-l4sC9QOdhXCm+e+VLGc2UgiBM6cxgdGYNHPQT2kDPMlSKZuPKFSyGP/B3WW9blauUiCo+06uacDiq3lX5I7G/A=="],
 

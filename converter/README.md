@@ -64,21 +64,44 @@ Written in strict TypeScript — no `any`.
   bodies (`() => <div/>`) have no statements to hoist, so they emit no `setup`
   lines.
 
+**Block keywords**
+- A component whose root is an explicit `<>...</>` with more than one child emits
+  a `fragment` block. Multiple roots are legal without it
+  (`beast-tsrx/examples/fragment`), but keeping the author's fragment makes the
+  grouping explicit and gives a `style` block something to sit beside. Fragments
+  anywhere else flatten into their siblings, which is valid in every position —
+  control-flow branches accept multiple children.
+- `<style>{`...`}</style>` becomes a `style` block. The CSS is dedented to its own
+  common indentation and re-indented under the block, since indentation is
+  structural. Both a template literal and plain text children work.
+- `<Suspense fallback={F}>` becomes `try` / `pending`, and `<ErrorBoundary
+  fallback={F}>` becomes `try` / `catch`. An `ErrorBoundary` wrapping a single
+  `Suspense` collapses into one `try` carrying both branches — the shape
+  `beast-tsrx/examples/boundary` uses. A fallback written as
+  `(error, reset) => jsx` supplies the `catch` bindings; any other fallback emits
+  a bare `catch`, and a non-JSX fallback becomes pipe text.
+
 **JSX → pug-like syntax**
 - Self-closing / element tags: a lowercase, dot-free tag name (`div`, `p`,
   `span`, ...) is treated as an HTML tag; anything else (`Foo`, `Theme.Provider`)
   is treated as a component reference.
 - `className="single-class"` on an HTML tag becomes shorthand: `tag.single-class`
   (and `div.single-class` collapses further to `.single-class`, since `div` is
-  the implicit default tag). Multi-class or dynamic `className` falls back to
-  a regular `class={...}`/`class="..."` attribute.
+  the implicit default tag), but only when the value matches
+  `[A-Za-z_][A-Za-z0-9_-]*`. The selector grammar is narrow: Tailwind values like
+  `sm:px-2`, `bg-black/40` and `w-[calc(100%-1rem)]` are rejected outright, and a
+  dotted value such as `p-2.5` is worse — it parses as *two* classes (`p-2` and
+  `5`). Anything outside that charset, multi-class, or dynamic `className` falls
+  back to a plain attribute.
 - A static `id="foo"` on an HTML tag becomes the `#foo` selector shorthand, so
   `<h1 id="title" className="big">` writes as `h1#title.big` and a `div` with
   either shorthand drops its implicit tag name (`<div id="p" className="wrap">`
   → `#p.wrap`). Ids that are not valid selector fragments, and dynamic
   `id={expr}`, stay ordinary attributes.
 - All other attributes render as `(name={expr} name="str" ...)`, omitted
-  entirely when there are none. A JSX spread renders in place as `...expr`.
+  entirely when there are none. A JSX spread renders in place as `{...expr}` —
+  the braces are required; Beast rejects a bare `...expr` with
+  `BEAST1202_INVALID_ATTRIBUTE`.
 - When a tag line with two or more attributes would exceed 100 columns, the
   attribute list is broken across `~` continuation lines:
 
@@ -101,7 +124,13 @@ Written in strict TypeScript — no `any`.
     inline concatenation: `h1 Welcome, #{user.name}`.
   - Otherwise, each child gets its own indented line under the parent:
     - Element/self-closing children recurse normally.
-    - A bare expression sibling becomes `| #{expr}`.
+    - An immediately-invoked switch —
+      `{(() => { switch (k) { case "a": return <A/>; default: return <D/> } })()}` —
+      becomes a `switch` block. Consecutive labels that share a body collapse
+      into one `case "b", "c"` arm, and a `return null` arm emits no body.
+    - A bare expression becomes `| #{expr}`. The pipe is not optional: an
+      unprefixed `#{expr}` line is read as an id selector
+      (`BEAST1101_INVALID_SELECTOR`).
     - A ternary `{cond ? <A/> : <B/>}` becomes an `if <cond>` / `else` block,
       with each branch's JSX indented one level further. A ternary in the false
       branch continues the chain as `elseif` rather than nesting a new `if`, and
@@ -114,6 +143,18 @@ Written in strict TypeScript — no `any`.
       are supported, as either an expression body or a `{ return (...) }` block.
       A `key` prop on the produced element is hoisted onto the `each` line
       (`each item in list key item.id`) rather than left as an attribute.
+    - Beast requires one or two plain identifiers as loop bindings
+      (`BEAST1402_INVALID_EACH_BINDING`), so a destructuring callback parameter
+      is bound to a generated name and unpacked in a `scope` block instead. The
+      key stays an attribute there, since it usually references the unpacked
+      names, which are not in scope on the `each` line:
+
+      ```btsx
+      each item in xs
+        scope
+          setup const { id, name } = item;
+          li(key={id}) #{name}
+      ```
 
 ## Known limitations
 
@@ -141,6 +182,11 @@ rule:
   source form.
 - Consecutive `setup` statements are emitted one per line rather than grouped
   into a single indented `setup` block. Both forms are valid.
+- `empty` (the `each` fallback branch) is still not emitted: it would mean
+  guessing that a condition tests the same list the `each` iterates, and
+  mistranslating that is worse than leaving the ternary as an `if`.
+- `switch` is recognised only in the immediately-invoked form. A `switch`
+  statement in the function body before the `return` stays a `setup` statement.
 
 ## Files
 - `src/lib/tsx-btsx.ts` — the converter (`convertTsxToBtsx`).
@@ -148,6 +194,23 @@ rule:
 - `docs/*.expected.btsx` — expected output of
   each sample, kept as reference fixtures. The converter reproduces them exactly
   apart from the blank lines the goldens use to separate top-level blocks.
+
+## Validating against the real parser
+
+`bun run validate` converts every sample plus a set of edge cases and feeds each
+result to `parse` from `beast-tsrx` — the same parser the compiler and the
+language server use. It is wired into `bun run check`.
+
+This is worth more than eyeballing the output: every rule documented above about
+spreads, the selector charset, loop bindings, pipe text and `module` indentation
+was found by the parser rejecting output that looked perfectly reasonable. When
+adding a converter feature, add a case to `scripts/edge-cases.ts` alongside it.
+
+`~/Code/beast/packages/language-server` is the other useful reference: its
+`BEAST_KEYWORDS` table is the definitive keyword list (note `fragment`, `scope`
+and `style`, which this converter does not emit), and its line-merging code
+documents the `~` continuation rule exactly — strip the `~`, strip one following
+space, join to the previous line with a single space, indentation irrelevant.
 
 ## Validating against the real grammar
 

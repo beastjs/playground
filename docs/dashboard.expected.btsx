@@ -9,8 +9,9 @@ module
     delta: number;
   }
 props { metrics, range, onRangeChange }: { metrics: Metric[]; range: Range; onRangeChange: (next: Range) => void }
-setup const ranges: Range[] = ["24h", "7d", "30d"];
-setup const total = useMemo(() => metrics.reduce((sum, m) => sum + m.value, 0), [metrics]);
+setup
+  const ranges: Range[] = ["24h", "7d", "30d"];
+  const total = useMemo(() => metrics.reduce((sum, m) => sum + m.value, 0), [metrics]);
 main#dashboard.shell
   header(className="flex items-center justify-between gap-6 border-b border-black/10 px-6 py-4")
     h1#dashboard-title.title Overview
@@ -25,7 +26,7 @@ main#dashboard.shell
           ~ role="tab"
           ~ aria-selected={r === range}
           ~ onClick={() => onRangeChange(r)}
-          ~ className={r === range ? "rounded-full bg-white px-4 py-2 text-sm font-semibold shadow" : "rounded-full px-4 py-2 text-sm text-neutral-500"}
+          ~ className={r === range ? "rounded-full bg-white px-4 py-2 text-sm" : "text-neutral-500"}
           ~ )
           | #{r}
   section(className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4")

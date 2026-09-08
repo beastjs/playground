@@ -118,3 +118,46 @@ All notable changes to `beast-converter` will be recorded here.
   throw `NotFoundError` when the pointer is no longer active, which crashed the
   drag handler; capture is an enhancement, not a requirement.
 
+### Added — parser-backed validation
+- `bun run validate` (now part of `bun run check`) converts every sample and 19
+  edge cases and feeds each result to `parse` from `beast-tsrx` — the same parser
+  the compiler and language server use. Edge cases live in
+  `scripts/edge-cases.ts`; each one exists because it once produced output Beast
+  rejected.
+
+### Fixed — invalid output found by the real parser
+Every one of these produced BTSX that looked reasonable but the Beast parser
+rejected, so the converter had been emitting uncompilable output:
+- JSX spreads were emitted bare (`div(...props)`), which fails with
+  `BEAST1202_INVALID_ATTRIBUTE`. They are now braced: `div({...props})`, the form
+  used in `beast-tsrx/examples/styling`.
+- A bare expression at element position emitted an unprefixed `#{expr}` line,
+  which parses as an id selector (`BEAST1101_INVALID_SELECTOR`). It is now
+  `| #{expr}`.
+- `className` shorthand was used for any value without a space, but the selector
+  charset is narrow: `sm:px-2`, `bg-black/40` and `w-[calc(100%-1rem)]` are all
+  rejected, and `p-2.5` silently parsed as two classes (`p-2` and `5`). The
+  shorthand is now restricted to `[A-Za-z_][A-Za-z0-9_-]*`.
+- A destructuring callback parameter emitted `each { id, name } in xs`, but
+  Beast requires one or two plain identifiers
+  (`BEAST1402_INVALID_EACH_BINDING`). It is now bound to a generated name and
+  unpacked in a `scope` block, with the key left as an attribute.
+- Multi-line declarations inside a `module` block only had their first line
+  indented, leaving the closing `};` at column 0 where it parses as a selector.
+  All lines are now indented, and object type aliases render inline.
+
+### Added — the four remaining block keywords
+- `fragment`: a component whose root is an explicit `<>...</>` with more than one
+  child now emits a `fragment` block instead of bare multiple roots.
+- `style`: `<style>{`...`}</style>` becomes a `style` block, with the CSS
+  dedented to its own common indentation and re-indented under the block.
+- `switch`: the immediately-invoked switch React uses to pick between elements
+  becomes a `switch` / `case` / `default` block. Consecutive labels sharing a
+  body collapse into one `case "b", "c"` arm.
+- `try`: `<Suspense fallback>` becomes `try` / `pending` and
+  `<ErrorBoundary fallback>` becomes `try` / `catch`; an `ErrorBoundary` wrapping
+  a single `Suspense` collapses into one `try` with both branches. A
+  `(error, reset) => jsx` fallback supplies the `catch` bindings.
+- New `boundary` sample exercising all four alongside `component`, `module` and
+  `scope`, plus six edge cases covering them.
+

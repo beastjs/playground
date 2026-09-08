@@ -8,10 +8,12 @@
     "build": "rspack build --mode production",
     "preview": "rspack serve --mode production",
     "typecheck": "tsrx-tsc --noEmit",
-    "check": "bun run typecheck && bun run build"
+    "check": "bun run typecheck && bun run validate && bun run build",
+    "validate": "bun run scripts/validate.ts"
   },
   "dependencies": {
     "@octanejs/base-ui": "0.1.51",
+    "@octanejs/radix": "^0.1.52",
     "@octanejs/resizable-panels": "^0.0.10",
     "beast-tsrx": "latest",
     "clsx": "^2.1.1",

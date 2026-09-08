@@ -10,9 +10,7 @@
     "jsx": "preserve",
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"]
     },
     "plugins": [
       {
@@ -20,10 +18,7 @@
       }
     ]
   },
-  "include": [
-    "src",
-    "rspack.config.ts"
-  ],
+  "include": ["src", "rspack.config.ts"],
   "tsrx": {
     "compiler": "octane"
   }

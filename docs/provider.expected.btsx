@@ -1,23 +1,20 @@
 // PROVIDER
 import { createContext, use, useContext } from "octane";
+import type { OctaneNode } from "octane";
 module
   type ThemeName = "light" | "dark";
   interface ProviderProps {
     theme: ThemeName;
-    children: unknown;
+    children: OctaneNode;
   }
-
   const Theme = createContext<ThemeName>("light");
-
 component ThemeLabel
   setup const theme = use(Theme);
   p.theme-label #{"Current theme: " + theme}
-
 component ThemeSwatch
   setup const theme = useContext(Theme);
   span(aria-label={"Theme swatch: " + theme} data-theme={theme})
 props { theme, children }: ProviderProps
-
 Theme.Provider(value={theme})
   section.theme-shell(data-theme={theme})
     ThemeLabel

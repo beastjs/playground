@@ -9,27 +9,28 @@ module
     disabled?: boolean;
   }
 props { commands, recent, onRun }: { commands: Command[]; recent: string[]; onRun: (id: string) => void }
-setup const [query, setQuery] = useState("");
-setup const [cursor, setCursor] = useState(0);
-setup const inputRef = useRef<HTMLInputElement>(null);
-setup const matches = useMemo(() => commands.filter((command) => command.title.toLowerCase().includes(query.toLowerCase())), [commands, query]);
-setup const groups = useMemo(() => [...new Set(matches.map((command) => command.group))], [matches]);
 setup
+  const [query, setQuery] = useState("");
+  const [cursor, setCursor] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const matches = useMemo(() => commands.filter((command) => command.title.toLowerCase().includes(query.toLowerCase())), [commands, query]);
+  const groups = useMemo(() => [...new Set(matches.map((command) => command.group))], [matches]);
+
   const run = useCallback((command: Command) => {
       if (command.disabled)
           return;
       onRun(command.id);
   }, [onRun]);
 #palette(
-  ~ className="fixed inset-0 z-50 grid place-items-start justify-center bg-black/40 p-4 pt-[12vh] backdrop-blur-sm"
+  ~ className="fixed inset-0 z-50 grid place-items-start p-4"
   ~ role="dialog"
   ~ aria-modal="true"
   ~ aria-labelledby="palette-label"
   ~ )
-  div(className="w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-neutral-900 text-neutral-100 shadow-2xl")
+  div(className="w-full max-w-xl rounded-sm bg-neutral-900 text-neutral-100")
     label#palette-label.sr-only Run a command
     input(
-      ~ className="w-full border-0 border-b border-white/10 bg-transparent px-5 py-4 text-base outline-none placeholder:text-neutral-500"
+      ~ className="w-full bg-transparent px-5 py-4 text-base outline-none"
       ~ ref={inputRef}
       ~ type="search"
       ~ value={query}
@@ -41,7 +42,7 @@ setup
     #palette-results(className="max-h-80 overflow-auto py-2" role="listbox")
       each group in groups key group
         section.py-1
-          h2(className="px-5 py-2 text-[0.68rem] font-bold uppercase tracking-widest text-neutral-500") #{group}
+          h2(className="p-2 font-bold uppercase text-neutral-500") #{group}
           each command, index in matches.filter((command) => command.group === group) key command.id
             button(
               ~ type="button"
@@ -50,13 +51,13 @@ setup
               ~ aria-disabled={command.disabled}
               ~ onClick={() => run(command)}
               ~ onMouseEnter={() => setCursor(index)}
-              ~ className={index === cursor ? "flex w-full items-center justify-between gap-4 bg-white/10 px-5 py-2.5 text-left text-sm" : "flex w-full items-center justify-between gap-4 px-5 py-2.5 text-left text-sm text-neutral-300"}
+              ~ className={index === cursor ? "grid place-items-center gap-4 bg-white/10 p-2" : "p-5 text-neutral-300"}
               ~ )
               span #{command.title}
               if command.shortcut
-                kbd(className="rounded border border-white/15 px-1.5 py-0.5 text-[0.7rem] text-neutral-400") #{command.shortcut}
+                kbd(className="rounded border border-white/15 p-1") #{command.shortcut}
       if matches.length === 0
         p(className="px-5 py-8 text-center text-sm text-neutral-500") No commands match "#{query}"
-    footer(className="flex items-center justify-between border-t border-white/10 px-5 py-3 text-[0.7rem] text-neutral-500")
+    footer(className="flex items-center justify-between p-3 text-neutral-500")
       span #{matches.length} of #{commands.length}
       span Recent: #{recent.length}
