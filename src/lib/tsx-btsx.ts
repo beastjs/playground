@@ -52,6 +52,17 @@ function requoteSource(ctx: ConvertContext, node: ts.Node): string {
 }
 
 /**
+ * The same, for an expression that will end up inside an attribute or a
+ * `#{...}` interpolation. Those are joined back into a single logical line, so
+ * a `// ...` comment would swallow whatever followed it — this printer drops
+ * comments instead.
+ */
+function requoteExpression(ctx: ConvertContext, node: ts.Node): string {
+  const text = ctx.exprPrinter.printNode(ts.EmitHint.Unspecified, node, ctx.sourceFile);
+  return applyTypeRenames(ctx, requoteText(text));
+}
+
+/**
  * Rewrites references to the React types this file imported. A type is only
  * imported from `octane` if it is referenced, so the substitution is also what
  * records the need for the import.
@@ -115,6 +126,8 @@ function requoteText(text: string): string {
 interface ConvertContext {
   sourceFile: ts.SourceFile;
   printer: ts.Printer;
+  /** Printer for expressions that have to survive being joined onto one line. */
+  exprPrinter: ts.Printer;
   sourceText: string;
   /**
    * React types this file imported, keyed by the name the code uses: how to
@@ -125,6 +138,18 @@ interface ConvertContext {
   octaneTypeImports: Map<string, string>;
   /** Value imports the conversion resolved onto Octane, keyed by module. */
   octaneImports: Map<string, Map<string, string>>;
+  /** Every name the file declares at module scope, so a lifted render prop
+   * can tell what it closed over from what is simply in scope. */
+  moduleScope: Set<string>;
+  /** Module-scope names in use, including the ones this conversion generates. */
+  takenNames: Set<string>;
+  /** `component` blocks lifted out of render props, awaiting emission. */
+  lifted: string[][];
+  /**
+   * React names the conversion handles by rewriting every use of them, so
+   * losing the import is the point rather than a gap worth reporting.
+   */
+  unwrappedReact: Set<string>;
 }
 
 export function convertTsxToBtsx(source: string): string {
@@ -137,73 +162,149 @@ export function convertTsxToBtsx(source: string): string {
   );
   assertParsed(sourceFile);
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
-  const ctx: ConvertContext = { sourceFile, printer, sourceText: source, reactTypes: new Map(), octaneTypeImports: new Map(), octaneImports: new Map() };
+  const exprPrinter = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed, removeComments: true });
+  const moduleScope = collectModuleScope(sourceFile.statements);
+  const ctx: ConvertContext = {
+    sourceFile,
+    printer,
+    exprPrinter,
+    sourceText: source,
+    reactTypes: new Map(),
+    octaneTypeImports: new Map(),
+    octaneImports: new Map(),
+    moduleScope,
+    takenNames: new Set(moduleScope),
+    lifted: [],
+    unwrappedReact: collectUnwrappedReact(sourceFile)
+  };
 
   const rootIndex = findRootComponentIndex(sourceFile.statements);
-  const outputLines: string[] = [];
-  let moduleBuffer: string[] = [];
-  // Where a generated `import type` belongs: after the imports the file wrote.
-  let importEnd = 0;
 
-  const flushModuleBuffer = () => {
-    if (moduleBuffer.length === 0) return;
-    outputLines.push("module");
-    outputLines.push(...indentLines(moduleBuffer, 1));
-    moduleBuffer = [];
-  };
+  // BTSX is written in one order regardless of the order TSX was written in:
+  // every declaration first, then the file's own template. Beast enforces it
+  // (BEAST1503_MISPLACED_DECLARATION), and a `const` collecting the exports —
+  // the one declaration TSX conventionally puts at the bottom — is exactly what
+  // the rule catches. So the sections are gathered separately here and
+  // assembled at the end.
+  const directive: string[] = [];
+  const imports: string[] = [];
+  const moduleMembers: string[] = [];
+  const components: string[] = [];
+  const root: string[] = [];
 
   const statements = sourceFile.statements;
   for (let idx = 0; idx < statements.length; idx++) {
     const statement = statements[idx];
     const leadingComment = getLeadingLineComment(ctx, statement);
-    if (leadingComment !== null) {
-      // A section-marker comment flushes any pending declarations first so
-      // the comment always introduces a fresh section.
-      flushModuleBuffer();
-      outputLines.push(leadingComment);
-    }
 
     if (ts.isImportDeclaration(statement)) {
-      outputLines.push(...renderImportDeclaration(ctx, statement));
-      importEnd = outputLines.length;
+      if (leadingComment !== null) imports.push(leadingComment);
+      imports.push(...renderImportDeclaration(ctx, statement));
       continue;
     }
 
-    if (ts.isFunctionDeclaration(statement)) {
-      flushModuleBuffer();
-      const name = statement.name ? statement.name.text : "Anonymous";
-      outputLines.push(...renderFunctionComponent(ctx, statement, name, idx === rootIndex));
-      continue;
-    }
-
-    const arrowComponent = getArrowComponent(statement);
-    if (arrowComponent) {
-      flushModuleBuffer();
-      outputLines.push(
-        ...renderFunctionComponent(ctx, arrowComponent.fn, arrowComponent.name, idx === rootIndex)
+    const component = getComponentDeclaration(statement);
+    if (component) {
+      const rendered = renderFunctionComponent(
+        ctx,
+        component.fn,
+        component.name,
+        idx === rootIndex,
+        component.forwarded
       );
+      const target = idx === rootIndex ? root : components;
+      if (leadingComment !== null) target.push(leadingComment);
+      target.push(...rendered);
+      continue;
+    }
+
+    // A directive is the one piece of module code that has to precede the
+    // imports, exactly as it would in TSRX, or it stops being a directive.
+    if (moduleMembers.length === 0 && isDirective(statement)) {
+      directive.push(`module ${ensureSemicolon(requoteSource(ctx, statement))}`);
       continue;
     }
 
     // type alias / interface / variable statement / anything else declarative
-    moduleBuffer.push(...renderModuleMember(ctx, statement));
+    if (leadingComment !== null) moduleMembers.push(leadingComment);
+    moduleMembers.push(...renderModuleMember(ctx, statement));
   }
-  flushModuleBuffer();
+
+  // The file's own component loses its name on the way out: Beast names the
+  // default export after the file. Module code that referred to it by name —
+  // an exports barrel naming every component in the file — silently stops
+  // resolving, so the reference is called out where it is written.
+  const rootName = rootIndex >= 0 ? getComponentDeclaration(statements[rootIndex])?.name : undefined;
+  if (rootName !== undefined && rootName !== "Anonymous") {
+    const mentions = new RegExp(`\\b${rootName}\\b`, "u");
+    const at = moduleMembers.findIndex((line) => mentions.test(line));
+    if (at >= 0) {
+      const indent = moduleMembers[at].slice(0, moduleMembers[at].length - moduleMembers[at].trimStart().length);
+      moduleMembers.splice(
+        at,
+        0,
+        `${indent}// ${rootName} is this file's own component, and Beast names that one after the file — this reference will not resolve`
+      );
+    }
+  }
 
   // Octane's own imports are written last, because what a conversion needs is
   // only known once every annotation and statement has been rendered — a
   // `React.useState` deep in the body pulls in an import of its own. They still
   // belong with the imports the file wrote.
-  const octaneImports: string[] = [];
   for (const [module, names] of ctx.octaneImports) {
-    octaneImports.push(`import { ${[...names.values()].join(", ")} } from "${module}";`);
+    imports.push(`import { ${[...names.values()].join(", ")} } from "${module}";`);
   }
   if (ctx.octaneTypeImports.size > 0) {
-    octaneImports.push(`import type { ${[...ctx.octaneTypeImports.values()].join(", ")} } from "octane";`);
+    imports.push(`import type { ${[...ctx.octaneTypeImports.values()].join(", ")} } from "octane";`);
   }
-  outputLines.splice(importEnd, 0, ...octaneImports);
+
+  const outputLines = [...directive, ...imports];
+  if (moduleMembers.length > 0) {
+    outputLines.push("module");
+    outputLines.push(...indentLines(moduleMembers, 1));
+  }
+  outputLines.push(...components, ...root);
 
   return outputLines.join("\n") + "\n";
+}
+
+/**
+ * The React names this conversion rewrites rather than imports. `forwardRef`
+ * qualifies only when every reference to it in the file is a call being
+ * unwrapped — one left over anywhere else still needs reporting, because the
+ * import is going away either way.
+ */
+function collectUnwrappedReact(sourceFile: ts.SourceFile): Set<string> {
+  const unwrapped = new Set<string>();
+
+  let unwrappedCalls = 0;
+  for (const statement of sourceFile.statements) {
+    if (getComponentDeclaration(statement)?.forwarded) unwrappedCalls += 1;
+  }
+  if (unwrappedCalls > 0 && unwrappedCalls === countReferences(sourceFile, "forwardRef")) {
+    unwrapped.add("forwardRef");
+  }
+  return unwrapped;
+}
+
+/** How many times a name is used outside the imports that bind it. */
+function countReferences(sourceFile: ts.SourceFile, name: string): number {
+  let count = 0;
+  const walk = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && node.text === name) count += 1;
+    node.forEachChild(walk);
+  };
+  for (const statement of sourceFile.statements) {
+    if (ts.isImportDeclaration(statement)) continue;
+    walk(statement);
+  }
+  return count;
+}
+
+/** `"use client"` and friends: a string literal standing alone as a statement. */
+function isDirective(statement: ts.Statement): boolean {
+  return ts.isExpressionStatement(statement) && ts.isStringLiteralLike(statement.expression);
 }
 
 /**
@@ -263,7 +364,11 @@ function renderImportDeclaration(ctx: ConvertContext, node: ts.ImportDeclaration
   if (!clause) return [`import ${quote(moduleTarget)};`];
   // Type-only imports carry nothing at runtime and are dropped, except React's,
   // which name types the converted file still annotates with.
-  if (clause.isTypeOnly && !isReact) return [];
+  const isTypeOnlyClause = clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
+  if (isTypeOnlyClause && !isReact) return [];
+  // `import defer` is the other phase a clause can carry. It changes when the
+  // module is evaluated, so it has to survive the rewrite.
+  const phase = clause.phaseModifier === ts.SyntaxKind.DeferKeyword ? "defer " : "";
 
   // A default or namespace import binds the module object itself, so it can
   // only follow a whole-module rewrite, never a per-symbol one.
@@ -282,7 +387,7 @@ function renderImportDeclaration(ctx: ConvertContext, node: ts.ImportDeclaration
   // order they were written in.
   for (const el of elements) {
     const { local, alias } = readImportSpecifier(el);
-    const isType = clause.isTypeOnly || el.isTypeOnly;
+    const isType = isTypeOnlyClause || el.isTypeOnly;
 
     if (!isReact) {
       if (isType) continue;
@@ -305,7 +410,10 @@ function renderImportDeclaration(ctx: ConvertContext, node: ts.ImportDeclaration
 
     const target = resolveReactExport(specifier, local);
     if (target === null) {
-      dropped.push(local);
+      // A name the conversion rewrites away is not a gap: `forwardRef` has no
+      // Octane equivalent because Octane needs none, and every call to it was
+      // unwrapped into a component that takes `ref` as a prop.
+      if (!ctx.unwrappedReact.has(local)) dropped.push(local);
       continue;
     }
     addOctaneImport(ctx, target, alias ? `${local} as ${alias}` : local);
@@ -319,10 +427,10 @@ function renderImportDeclaration(ctx: ConvertContext, node: ts.ImportDeclaration
     const inline = groups.get(moduleTarget);
     if (inline) groups.delete(moduleTarget);
     const parts = [...defaultParts, ...(inline ? [`{ ${inline.join(", ")} }`] : [])];
-    lines.push(`import ${parts.join(", ")} from ${quote(moduleTarget)};`);
+    lines.push(`import ${phase}${parts.join(", ")} from ${quote(moduleTarget)};`);
   }
   for (const [target, names] of groups) {
-    lines.push(`import { ${names.join(", ")} } from ${quote(target)};`);
+    lines.push(`import ${phase}{ ${names.join(", ")} } from ${quote(target)};`);
   }
   return lines;
 }
@@ -363,9 +471,14 @@ function renderModuleMember(ctx: ConvertContext, statement: ts.Statement): strin
       : "";
     return [`type ${name}${params} = ${renderTypeInline(ctx, statement.type)};`];
   }
+  // A plain helper function — anything not named like a component — is declared
+  // as written. Its body already ends in `}`, so no semicolon is added.
+  if (ts.isFunctionDeclaration(statement)) {
+    return reindent(toLines(requoteSource(ctx, statement)));
+  }
   // const/let/var and anything else: print + requote + ensure semicolon.
   const text = requoteSource(ctx, statement);
-  return toLines(ensureSemicolon(text));
+  return reindent(toLines(ensureSemicolon(text)));
 }
 
 function renderInterface(ctx: ConvertContext, node: ts.InterfaceDeclaration): string[] {
@@ -402,6 +515,21 @@ function toLines(text: string): string[] {
   return text.split("\n");
 }
 
+/**
+ * Rewrites the TypeScript printer's four-space body indentation to the
+ * two-space `INDENT` the rest of the output uses, so a multi-line declaration
+ * nested in a `module` block lines up with everything around it.
+ */
+function reindent(lines: string[]): string[] {
+  return lines.map((line) => {
+    const body = line.trimStart();
+    if (body.length === 0) return "";
+    const depth = (line.length - body.length) / 4;
+    if (!Number.isInteger(depth)) return line;
+    return INDENT.repeat(depth) + body;
+  });
+}
+
 function ensureSemicolon(text: string): string {
   return text.endsWith(";") ? text : `${text};`;
 }
@@ -418,7 +546,7 @@ function ensureSemicolon(text: string): string {
  */
 function renderSetupBlock(ctx: ConvertContext, statements: readonly ts.Statement[]): string[] {
   const rendered = statements.map((stmt) =>
-    toLines(ensureSemicolon(requoteSource(ctx, stmt)))
+    reindent(toLines(renderSetupStatement(ctx, stmt)))
   );
   if (rendered.length === 0) return [];
 
@@ -436,29 +564,130 @@ function renderSetupBlock(ctx: ConvertContext, statements: readonly ts.Statement
   return ["setup", ...indentLines(source, 1)];
 }
 
+/**
+ * One hoisted statement as it is written in `setup`. A statement whose own
+ * syntax already closes it — a function, an `if`, a loop, a `try` — takes no
+ * semicolon; a declaration or expression statement does.
+ */
+function renderSetupStatement(ctx: ConvertContext, statement: ts.Statement): string {
+  const text = requoteSource(ctx, statement);
+  if (endsWithBlock(statement)) return text;
+  return ensureSemicolon(text);
+}
+
+function endsWithBlock(statement: ts.Statement): boolean {
+  return (
+    ts.isFunctionDeclaration(statement) ||
+    ts.isClassDeclaration(statement) ||
+    ts.isIfStatement(statement) ||
+    ts.isForStatement(statement) ||
+    ts.isForOfStatement(statement) ||
+    ts.isForInStatement(statement) ||
+    ts.isWhileStatement(statement) ||
+    ts.isTryStatement(statement) ||
+    ts.isSwitchStatement(statement) ||
+    ts.isBlock(statement)
+  );
+}
+
 type ComponentFn = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
 
+/** A `forwardRef(...)` call the conversion unwraps into a plain component. */
+interface ForwardedRef {
+  fn: ts.ArrowFunction | ts.FunctionExpression;
+  /** The second parameter, which becomes the `ref` prop. */
+  refParameter: ts.ParameterDeclaration;
+  /** `forwardRef<HTMLElement, Props>`: the element type, then the props type. */
+  typeArguments: ts.NodeArray<ts.TypeNode> | undefined;
+}
+
+interface ComponentDeclaration {
+  name: string;
+  fn: ComponentFn;
+  forwarded?: ForwardedRef;
+}
+
 /**
- * Detects `const Foo = (props) => <jsx/>` / `const Foo = function () { ... }`
- * at the top level. Only initializers that actually return JSX are treated as
- * components — everything else stays an ordinary `module` declaration.
+ * JSX resolves a lowercase tag to an HTML element, so only a capitalized name
+ * can ever be used as a component. A `useGroupContext` or a `formatLabel` is a
+ * plain function that happens to live beside the components, and belongs in
+ * `module` as written.
  */
-function getArrowComponent(
-  statement: ts.Statement
-): { name: string; fn: ts.ArrowFunction | ts.FunctionExpression } | null {
+function isComponentName(name: string): boolean {
+  return /^[A-Z]/u.test(name);
+}
+
+/**
+ * Detects the top-level declarations that become `component` blocks:
+ * `function Foo() { ... }`, `const Foo = (props) => <jsx/>` and
+ * `const Foo = function () { ... }`. A function has to be named like a
+ * component, and an initializer has to actually return JSX — everything else
+ * stays an ordinary `module` declaration.
+ */
+function getComponentDeclaration(statement: ts.Statement): ComponentDeclaration | null {
+  if (ts.isFunctionDeclaration(statement)) {
+    // A default-exported component may be anonymous, in which case there is no
+    // name to judge and the export itself says it is the file's component.
+    const name = statement.name ? statement.name.text : "Anonymous";
+    if (statement.name && !isComponentName(name)) return null;
+    return { name, fn: statement };
+  }
+
+  // `export default forwardRef(...)`: the file's own component, written as the
+  // wrapper's return value rather than as a declaration.
+  if (ts.isExportAssignment(statement)) {
+    if (statement.isExportEquals) return null;
+    const forwarded = getForwardRefCall(statement.expression);
+    if (!forwarded) return null;
+    const inner = forwarded.fn;
+    const name = ts.isFunctionExpression(inner) && inner.name ? inner.name.text : "Anonymous";
+    return { name, fn: inner, forwarded };
+  }
+
   if (!ts.isVariableStatement(statement)) return null;
   const declarations = statement.declarationList.declarations;
   if (declarations.length !== 1) return null;
 
   const [declaration] = declarations;
   if (!ts.isIdentifier(declaration.name)) return null;
+  if (!isComponentName(declaration.name.text)) return null;
 
   const init = declaration.initializer;
   if (!init) return null;
+
+  const forwarded = getForwardRefCall(init);
+  if (forwarded) return { name: declaration.name.text, fn: forwarded.fn, forwarded };
+
   if (!ts.isArrowFunction(init) && !ts.isFunctionExpression(init)) return null;
   if (!returnsJsx(init)) return null;
 
   return { name: declaration.name.text, fn: init };
+}
+
+/**
+ * `forwardRef((props, ref) => jsx)` — the wrapper Octane has no equivalent for,
+ * because a ref is an ordinary prop there and nothing needs forwarding
+ * (`beast-tsrx/examples/refs`). The call is unwrapped: the function inside is
+ * the component, and its second parameter rejoins the first as a `ref` prop.
+ */
+function getForwardRefCall(expression: ts.Expression): ForwardedRef | null {
+  const call = unwrapParens(expression);
+  if (!ts.isCallExpression(call) || call.arguments.length !== 1) return null;
+
+  const callee = call.expression;
+  const isForwardRef = ts.isIdentifier(callee)
+    ? callee.text === "forwardRef"
+    : ts.isPropertyAccessExpression(callee) && callee.name.text === "forwardRef";
+  if (!isForwardRef) return null;
+
+  const [fn] = call.arguments;
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) return null;
+  if (fn.parameters.length !== 2) return null;
+
+  const [, refParameter] = fn.parameters;
+  if (!ts.isIdentifier(refParameter.name)) return null;
+
+  return { fn, refParameter, typeArguments: call.typeArguments };
 }
 
 function returnsJsx(fn: ts.ArrowFunction | ts.FunctionExpression): boolean {
@@ -483,11 +712,10 @@ function findRootComponentIndex(statements: ts.NodeArray<ts.Statement>): number 
 
   for (let i = 0; i < statements.length; i++) {
     const statement = statements[i];
-    const fn = ts.isFunctionDeclaration(statement)
-      ? statement
-      : (getArrowComponent(statement)?.fn ?? null);
-    if (!fn) continue;
-    if (!getRootPropsParam(fn)) continue;
+    const declaration = getComponentDeclaration(statement);
+    if (!declaration) continue;
+    // An unwrapped `forwardRef` always takes props: the ref is one of them.
+    if (!declaration.forwarded && !getRootPropsParam(declaration.fn)) continue;
 
     if (hasDefaultExport(statement)) return i;
     fallback = i;
@@ -497,6 +725,7 @@ function findRootComponentIndex(statements: ts.NodeArray<ts.Statement>): number 
 }
 
 function hasDefaultExport(statement: ts.Statement): boolean {
+  if (ts.isExportAssignment(statement)) return !statement.isExportEquals;
   const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
   return modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
 }
@@ -505,11 +734,12 @@ function renderFunctionComponent(
   ctx: ConvertContext,
   fn: ComponentFn,
   name: string,
-  isRoot: boolean
+  isRoot: boolean,
+  forwarded?: ForwardedRef
 ): string[] {
   if (fn.body === undefined) return [];
 
-  const rootParam = getRootPropsParam(fn);
+  const rootParam = forwarded ? null : getRootPropsParam(fn);
 
   // An arrow function with a concise body has no statements to hoist into
   // `setup` lines — its whole body is the returned expression.
@@ -518,14 +748,105 @@ function renderFunctionComponent(
     : { setupStatements: [] as ts.Statement[], returnExpr: fn.body as ts.Expression };
 
   const body: string[] = [];
+  const notes: string[] = [];
   if (rootParam) body.push(`props ${renderRootPropsHeader(ctx, rootParam)}`);
+  if (forwarded) {
+    const header = renderForwardedPropsHeader(ctx, forwarded);
+    body.push(`props ${header.text}`);
+    if (!header.typed) {
+      notes.push(`// ${name} forwarded a ref; give its props a type that includes ref`);
+    }
+  }
   body.push(...renderSetupBlock(ctx, setupStatements));
+  // Rendering the template is what lifts render props out of it, so the blocks
+  // they became are only known now. They are declarations, and every
+  // declaration has to precede the first template line
+  // (BEAST1503_MISPLACED_DECLARATION), so they go out ahead of this component.
   if (returnExpr) body.push(...emitRootJsx(ctx, returnExpr));
+  const declarations = ctx.lifted.splice(0, ctx.lifted.length).flat();
 
   // The file's own component sits at column zero; every other one is a named
   // `component` block with its props nested inside it.
-  if (isRoot) return body;
-  return [`component ${name}`, ...indentLines(body, 1)];
+  if (isRoot) return [...declarations, ...notes, ...body];
+  return [...declarations, ...notes, `component ${name}`, ...indentLines(body, 1)];
+}
+
+/**
+ * The `props` line for an unwrapped `forwardRef`. The two parameters become
+ * one: the ref joins the props it was separated from, ahead of any rest
+ * element, which has to stay last to be a valid binding pattern — and ahead of
+ * it is also where it belongs, since `forwardRef` kept the ref out of the rest.
+ */
+function renderForwardedPropsHeader(
+  ctx: ConvertContext,
+  forwarded: ForwardedRef
+): { text: string; typed: boolean } {
+  const refName = forwarded.refParameter.name.getText(ctx.sourceFile);
+  const [propsParameter] = forwarded.fn.parameters;
+
+  const bindings: string[] = [];
+  let rest: string | null = null;
+  if (ts.isObjectBindingPattern(propsParameter.name)) {
+    for (const element of propsParameter.name.elements) {
+      const text = requoteSource(ctx, element);
+      if (element.dotDotDotToken) rest = text;
+      else bindings.push(text);
+    }
+  } else {
+    // A whole-object parameter keeps working as one: the ref is named out of it
+    // and everything else rests back into the name the body already uses.
+    rest = `...${propsParameter.name.getText(ctx.sourceFile)}`;
+  }
+  bindings.push(refName);
+  if (rest !== null) bindings.push(rest);
+
+  const pattern = `{ ${bindings.join(", ")} }`;
+  const annotation = renderForwardedPropsType(ctx, forwarded, refName);
+  if (annotation === null) return { text: pattern, typed: false };
+  return { text: `${pattern}: ${annotation}`, typed: true };
+}
+
+/**
+ * `forwardRef<HTMLElement, Props>` states both halves of the type it needs:
+ * the props, and what the ref points at. Without the type arguments the
+ * parameters' own annotations are the next best source, and with neither there
+ * is nothing to write.
+ */
+function renderForwardedPropsType(
+  ctx: ConvertContext,
+  forwarded: ForwardedRef,
+  refName: string
+): string | null {
+  const args = forwarded.typeArguments;
+  if (args && args.length === 2) {
+    const element = renderTypeInline(ctx, args[0]);
+    const props = renderTypeInline(ctx, args[1]);
+    return `${props} & { ${refName}: ${octaneRefType(ctx, element)} }`;
+  }
+
+  const [propsParameter] = forwarded.fn.parameters;
+  if (!propsParameter.type) return null;
+  const props = renderTypeInline(ctx, propsParameter.type);
+  const ref = forwarded.refParameter.type
+    ? renderTypeInline(ctx, forwarded.refParameter.type)
+    : octaneRefType(ctx, "unknown");
+  return `${props} & { ${refName}: ${ref} }`;
+}
+
+/** `createElement`, recording the import it needs from Octane. */
+function octaneCreateElement(ctx: ConvertContext): string {
+  const module = resolveReactExport("react", "createElement");
+  if (module === null) return "createElement";
+  addOctaneImport(ctx, module, "createElement");
+  return "createElement";
+}
+
+/** `Ref<T>`, recording the import it needs from Octane. */
+function octaneRefType(ctx: ConvertContext, element: string): string {
+  const octane = resolveReactType("Ref");
+  if (octane === null) return `unknown`;
+  ctx.octaneTypeImports.set(octane, octane);
+  return `${octane}<${element}>`;
 }
 
 /** A "root" component is one whose single parameter is `{ ...destructured }: SomeType`. */
@@ -638,6 +959,327 @@ function splitBody(body: ts.Block): { setupStatements: ts.Statement[]; returnExp
   return { setupStatements, returnExpr };
 }
 
+/** ---------- render props ---------- */
+
+/**
+ * Names that are always in scope, so a reference to one is never something the
+ * enclosing component owns.
+ */
+const AMBIENT_NAMES: ReadonlySet<string> = new Set([
+  "globalThis", "window", "document", "navigator", "location", "history", "console",
+  "Math", "JSON", "Object", "Array", "String", "Number", "Boolean", "Symbol", "BigInt",
+  "Date", "RegExp", "Error", "TypeError", "Promise", "Map", "Set", "WeakMap", "WeakSet",
+  "Intl", "URL", "URLSearchParams", "Infinity", "NaN", "undefined",
+  "setTimeout", "clearTimeout", "setInterval", "clearInterval", "requestAnimationFrame",
+  "cancelAnimationFrame", "queueMicrotask", "structuredClone", "fetch", "parseInt",
+  "parseFloat", "isNaN", "isFinite", "encodeURIComponent", "decodeURIComponent"
+]);
+
+/** True for `<div>` / `<path>` — a tag the runtime resolves, not a reference. */
+function isIntrinsicTag(tagName: ts.JsxTagNameExpression): boolean {
+  return ts.isIdentifier(tagName) && isHtmlTagName(tagName.text);
+}
+
+/** Every name a binding pattern or identifier introduces. */
+function collectBoundNames(name: ts.BindingName, into: Set<string>): void {
+  if (ts.isIdentifier(name)) {
+    into.add(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isOmittedExpression(element)) continue;
+    collectBoundNames(element.name, into);
+  }
+}
+
+/** The names a list of statements declares, collected before any is visited. */
+function declaredNames(statements: readonly ts.Statement[]): Set<string> {
+  const names = new Set<string>();
+  for (const statement of statements) {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        collectBoundNames(declaration.name, names);
+      }
+      continue;
+    }
+    if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name) {
+      names.add(statement.name.text);
+    }
+  }
+  return names;
+}
+
+/** The names one function's parameters bind. */
+function parameterNames(parameters: readonly ts.ParameterDeclaration[]): Set<string> {
+  const names = new Set<string>();
+  for (const parameter of parameters) collectBoundNames(parameter.name, names);
+  return names;
+}
+
+/**
+ * The identifiers a function reads from outside itself — everything that is
+ * neither bound within it, nor declared at module scope, nor ambient. Lifting
+ * a render prop out of its component turns exactly these into props, because
+ * a `component` block is written at module scope and closes over nothing.
+ *
+ * Only value positions count: a type annotation resolves against the module's
+ * own imports, a property name after a `.` is not a reference at all, and a
+ * JSX attribute name is markup rather than a read.
+ */
+function collectFreeNames(ctx: ConvertContext, fn: ts.ArrowFunction | ts.FunctionExpression): string[] {
+  const free: string[] = [];
+  const seen = new Set<string>();
+
+  const reference = (name: string, bound: ReadonlySet<string>): void => {
+    if (bound.has(name) || seen.has(name)) return;
+    if (ctx.moduleScope.has(name) || AMBIENT_NAMES.has(name)) return;
+    seen.add(name);
+    free.push(name);
+  };
+
+  const walk = (node: ts.Node, bound: ReadonlySet<string>): void => {
+    // A type never becomes a prop: it resolves where the component is written.
+    if (ts.isTypeNode(node) || ts.isTypeParameterDeclaration(node)) return;
+
+    if (ts.isIdentifier(node)) {
+      reference(node.text, bound);
+      return;
+    }
+
+    if (ts.isPropertyAccessExpression(node)) {
+      walk(node.expression, bound);
+      return;
+    }
+    if (ts.isQualifiedName(node)) return;
+
+    if (ts.isPropertyAssignment(node)) {
+      if (ts.isComputedPropertyName(node.name)) walk(node.name.expression, bound);
+      walk(node.initializer, bound);
+      return;
+    }
+    if (ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) {
+      const inner = new Set([...bound, ...parameterNames(node.parameters)]);
+      if (node.body) walk(node.body, inner);
+      return;
+    }
+    if (ts.isJsxAttribute(node)) {
+      if (node.initializer) walk(node.initializer, bound);
+      return;
+    }
+    // `<li>` names an HTML element, not a value in scope; `<Popup>` does name
+    // one. The closing tag repeats whichever it was.
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      if (!isIntrinsicTag(node.tagName)) walk(node.tagName, bound);
+      walk(node.attributes, bound);
+      return;
+    }
+    if (ts.isJsxClosingElement(node)) return;
+    if (ts.isBindingElement(node)) {
+      // `{ a: b = fallback }` reads `fallback`; `a` and `b` are not reads.
+      if (node.initializer) walk(node.initializer, bound);
+      if (!ts.isIdentifier(node.name)) walk(node.name, bound);
+      return;
+    }
+
+    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) {
+      const inner = new Set([...bound, ...parameterNames(node.parameters)]);
+      if (node.name && ts.isIdentifier(node.name)) inner.add(node.name.text);
+      for (const parameter of node.parameters) {
+        if (parameter.initializer) walk(parameter.initializer, bound);
+      }
+      if (node.body) walk(node.body, inner);
+      return;
+    }
+
+    if (ts.isBlock(node) || ts.isCaseClause(node) || ts.isDefaultClause(node)) {
+      const inner = new Set([...bound, ...declaredNames(node.statements)]);
+      for (const statement of node.statements) walk(statement, inner);
+      return;
+    }
+
+    if (ts.isVariableDeclaration(node)) {
+      // The declared names are already in scope for this statement list; only
+      // the initializer and a destructuring default are reads.
+      if (!ts.isIdentifier(node.name)) walk(node.name, bound);
+      if (node.initializer) walk(node.initializer, bound);
+      return;
+    }
+
+    if (ts.isCatchClause(node)) {
+      const inner = new Set(bound);
+      if (node.variableDeclaration) collectBoundNames(node.variableDeclaration.name, inner);
+      walk(node.block, inner);
+      return;
+    }
+
+    if (ts.isForStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node)) {
+      const inner = new Set(bound);
+      const initializer = ts.isForStatement(node) ? node.initializer : node.initializer;
+      if (initializer && ts.isVariableDeclarationList(initializer)) {
+        for (const declaration of initializer.declarations) collectBoundNames(declaration.name, inner);
+      }
+      node.forEachChild((child) => walk(child, inner));
+      return;
+    }
+
+    node.forEachChild((child) => walk(child, bound));
+  };
+
+  const bound = new Set(parameterNames(fn.parameters));
+  for (const parameter of fn.parameters) {
+    if (parameter.initializer) walk(parameter.initializer, new Set());
+  }
+  walk(fn.body, bound);
+  return free;
+}
+
+/** Every name the file itself declares at module scope, imports included. */
+function collectModuleScope(statements: ts.NodeArray<ts.Statement>): Set<string> {
+  const names = new Set<string>();
+  for (const statement of statements) {
+    if (ts.isImportDeclaration(statement)) {
+      const clause = statement.importClause;
+      if (!clause) continue;
+      if (clause.name) names.add(clause.name.text);
+      const bindings = clause.namedBindings;
+      if (!bindings) continue;
+      if (ts.isNamespaceImport(bindings)) names.add(bindings.name.text);
+      else for (const element of bindings.elements) names.add(element.name.text);
+      continue;
+    }
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        collectBoundNames(declaration.name, names);
+      }
+      continue;
+    }
+    if (
+      (ts.isFunctionDeclaration(statement) ||
+        ts.isClassDeclaration(statement) ||
+        ts.isEnumDeclaration(statement) ||
+        ts.isTypeAliasDeclaration(statement) ||
+        ts.isInterfaceDeclaration(statement)) &&
+      statement.name
+    ) {
+      names.add(statement.name.text);
+    }
+  }
+  return names;
+}
+
+/** A name for a generated component that nothing in the file already uses. */
+function uniqueComponentName(ctx: ConvertContext, base: string): string {
+  const cleaned = base.replace(/[^A-Za-z0-9]/gu, "") || "Render";
+  let name = `${cleaned}Children`;
+  let suffix = 2;
+  while (ctx.takenNames.has(name)) {
+    name = `${cleaned}Children${suffix}`;
+    suffix += 1;
+  }
+  ctx.takenNames.add(name);
+  return name;
+}
+
+/** A parameter name for the call site that collides with nothing it mentions. */
+function freshParameterName(taken: ReadonlySet<string>): string {
+  let name = "state";
+  let suffix = 2;
+  while (taken.has(name)) {
+    name = `state${suffix}`;
+    suffix += 1;
+  }
+  return name;
+}
+
+/**
+ * Lifts a JSX-returning render prop into its own `component` block, and returns
+ * the `children={...}` attribute that calls it.
+ *
+ * The block is written at module scope, so everything the function read from
+ * the component around it — props, `setup` values — becomes a prop, passed
+ * explicitly at the call site. Calling the generated component as a function
+ * rather than mounting it as an element keeps the original semantics: the
+ * render prop ran inline in whatever rendered it, and so does this.
+ *
+ * Returns null when the shape is not liftable, which leaves the function to be
+ * hoisted into `setup` instead.
+ */
+function liftRenderProp(
+  ctx: ConvertContext,
+  tag: string,
+  fn: ts.ArrowFunction | ts.FunctionExpression
+): string | null {
+  if (!returnsJsx(fn)) return null;
+  if (fn.parameters.length > 1) return null;
+
+  const [parameter] = fn.parameters;
+  const isPattern = parameter !== undefined && ts.isObjectBindingPattern(parameter.name);
+  const isIdentifier = parameter !== undefined && ts.isIdentifier(parameter.name);
+  if (parameter !== undefined && !isPattern && !isIdentifier) return null;
+
+  const captures = collectFreeNames(ctx, fn);
+  const name = uniqueComponentName(ctx, tag);
+
+  // The generated component's own parameter: what the render prop destructured,
+  // widened with the names it used to close over.
+  const bindings: string[] = [];
+  if (parameter && isPattern) {
+    const pattern = requoteSource(ctx, parameter.name).trim();
+    const inner = pattern.slice(1, -1).trim();
+    if (inner.length > 0) bindings.push(inner);
+  } else if (parameter && isIdentifier) {
+    bindings.push(parameter.name.getText(ctx.sourceFile));
+  }
+  bindings.push(...captures);
+
+  // The parameter's own annotation carries over when nothing was captured. Once
+  // captures widen the parameter there is no type left to write: their types
+  // live in the component this was lifted out of, which is not in scope here.
+  const annotation =
+    parameter && parameter.type && captures.length === 0
+      ? `: ${renderTypeInline(ctx, parameter.type)}`
+      : "";
+
+  const body: string[] = [];
+  if (bindings.length > 0) body.push(`props { ${bindings.join(", ")} }${annotation}`);
+  const { setupStatements, returnExpr } = ts.isBlock(fn.body)
+    ? splitBody(fn.body)
+    : { setupStatements: [] as ts.Statement[], returnExpr: fn.body as ts.Expression };
+  body.push(...renderSetupBlock(ctx, setupStatements));
+  if (returnExpr) body.push(...emitRootJsx(ctx, returnExpr));
+
+  const notes = [
+    captures.length > 0
+      ? `// lifted from the ${tag} render prop; ${captures.join(", ")} came from the component around it`
+      : `// lifted from the ${tag} render prop`
+  ];
+  if (bindings.length > 0 && annotation === "") {
+    notes.push("// its props type is the one thing the conversion cannot infer — annotate it");
+  }
+  ctx.lifted.push([...notes, `component ${name}`, ...indentLines(body, 1)]);
+
+  // A destructuring render prop that captured nothing is already shaped like a
+  // component: the state object it unpacks *is* the props object.
+  // The element has to be *created*, never called. A compiled component takes
+  // the runtime's own arguments beside its props, so invoking it directly from
+  // the render prop leaves those undefined and it dies reading its block.
+  const create = octaneCreateElement(ctx);
+
+  if (parameter && isIdentifier) {
+    const argument = parameter.name.getText(ctx.sourceFile);
+    return `children={(${argument}) => ${create}(${name}, { ${[argument, ...captures].join(", ")} })}`;
+  }
+  if (parameter && isPattern) {
+    const argument = freshParameterName(new Set([...captures, ...ctx.takenNames]));
+    // A destructuring render prop that captured nothing is already shaped like
+    // a component: the state object it unpacks is the props object.
+    const props = captures.length === 0 ? argument : `{ ...${argument}, ${captures.join(", ")} }`;
+    return `children={(${argument}) => ${create}(${name}, ${props})}`;
+  }
+  if (captures.length === 0) return `children={() => ${create}(${name}, {})}`;
+  return `children={() => ${create}(${name}, { ${captures.join(", ")} })}`;
+}
+
 /** ---------- JSX -> pug-like emitter ---------- */
 
 /**
@@ -678,7 +1320,7 @@ function emitElementOrExpression(
   // A bare expression at element position must be pipe text: an unprefixed
   // `#{...}` line parses as an id selector and Beast rejects it with
   // BEAST1101_INVALID_SELECTOR.
-  return [`${INDENT.repeat(indent)}| #{${renderExpr(ctx, node)}}`];
+  return pipeExpression(renderExpr(ctx, node), indent);
 }
 
 /**
@@ -772,7 +1414,7 @@ function renderAttrValue(ctx: ConvertContext, attr: ts.JsxAttribute): string {
 }
 
 function renderExpr(ctx: ConvertContext, expr: ts.Expression): string {
-  return requoteSource(ctx, expr);
+  return requoteExpression(ctx, expr);
 }
 
 /**
@@ -811,11 +1453,49 @@ function buildTagLines(name: string, isHtml: boolean, attrs: AttrInfo, indent: n
   const pad = INDENT.repeat(indent);
   if (rest.length === 0) return [`${pad}${selector}`];
 
+  // An attribute whose value printed across several lines — an event handler
+  // with a block body, a render prop — has no single-line form to fall back to:
+  // every one of its lines has to become a continuation, or the tail lands in
+  // the template as markup and the attribute list is never closed
+  // (BEAST1201_UNCLOSED_ATTRIBUTES).
+  const spansLines = rest.some((attr) => attr.includes("\n"));
   const singleLine = `${pad}${selector}(${rest.join(" ")})`;
-  if (singleLine.length <= MAX_TAG_LINE || rest.length < 2) return [singleLine];
+  if (!spansLines && (singleLine.length <= MAX_TAG_LINE || rest.length < 2)) return [singleLine];
 
   const contPad = INDENT.repeat(indent + 1);
-  return [`${pad}${selector}(`, ...rest.map((attr) => `${contPad}~ ${attr}`), `${contPad}~ )`];
+  const lines = [`${pad}${selector}(`];
+  for (const attr of rest) lines.push(...continuationLines(attr, contPad));
+  lines.push(`${contPad}~ )`);
+  return lines;
+}
+
+/**
+ * Splits one printed fragment into `~` continuation lines. Beast rejoins them
+ * with a single space, so each line is trimmed and blank lines are dropped —
+ * what comes back is the fragment as one logical line.
+ */
+function continuationLines(text: string, pad: string): string[] {
+  const lines: string[] = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) lines.push(`${pad}~ ${trimmed}`);
+  }
+  return lines;
+}
+
+/**
+ * Emits `| #{expr}` pipe text, continuing onto `~` lines when the expression
+ * printed across several of them.
+ */
+function pipeExpression(text: string, indent: number): string[] {
+  const pad = INDENT.repeat(indent);
+  const [first, ...rest] = text.split("\n");
+  if (rest.length === 0) return [`${pad}| #{${text}}`];
+  return [
+    `${pad}| #{${first.trim()}`,
+    ...continuationLines(rest.join("\n"), INDENT.repeat(indent + 1)),
+    `${INDENT.repeat(indent + 1)}~ }`
+  ];
 }
 
 
@@ -896,7 +1576,7 @@ function emitFallbackBody(ctx: ConvertContext, fallback: ts.Expression, indent: 
   if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
     return [`${INDENT.repeat(indent)}| ${expr.text}`];
   }
-  return [`${INDENT.repeat(indent)}| #{${renderExpr(ctx, expr)}}`];
+  return pipeExpression(renderExpr(ctx, expr), indent);
 }
 
 /**
@@ -1009,9 +1689,20 @@ function emitJsxElement(
 
   const isHtml = isHtmlTagName(name);
   const attrs = collectAttrs(ctx, node.openingElement.attributes, isHtml, omit);
-  const tagLines = buildTagLines(name, isHtml, attrs, indent);
 
   const meaningful = meaningfulChildren(node.children);
+
+  // A render prop is the child the template cannot own: the element calls it,
+  // with arguments only it has. It goes back to being what it already is — the
+  // `children` prop — written last so it keeps winning over any spread, the
+  // same precedence JSX children have.
+  const render = getRenderPropChild(meaningful);
+  if (render) {
+    attrs.rest.push(renderPropAttribute(ctx, name, render));
+    return buildTagLines(name, isHtml, attrs, indent);
+  }
+
+  const tagLines = buildTagLines(name, isHtml, attrs, indent);
   if (meaningful.length === 0) return tagLines;
 
   // Once the attribute list is split across `~` continuation lines there is no
@@ -1039,6 +1730,40 @@ function emitJsxElement(
   }
 
   return [...tagLines, ...emitChildren(ctx, meaningful, indent + 1)];
+}
+
+/**
+ * `<Root>{(state) => <jsx/>}</Root>`: children given as a function the element
+ * invokes itself. BTSX has no block form for one — a block is a subtree, and
+ * this is a callback whose parameters only exist inside the call — so the
+ * function stays a TypeScript expression, which is where a render prop is
+ * least surprising anyway.
+ */
+function getRenderPropChild(
+  children: ts.JsxChild[]
+): ts.ArrowFunction | ts.FunctionExpression | null {
+  if (children.length !== 1) return null;
+  const [only] = children;
+  if (!ts.isJsxExpression(only) || !only.expression) return null;
+  const expr = unwrapParens(only.expression);
+  if (!ts.isArrowFunction(expr) && !ts.isFunctionExpression(expr)) return null;
+  return expr;
+}
+
+/**
+ * The `children` attribute a render prop becomes. One that returns JSX is
+ * lifted into a `component` block so its markup is converted like any other;
+ * one that returns anything else — a string, a number, an element the caller
+ * built — has no template to lift and stays the expression it was.
+ */
+function renderPropAttribute(
+  ctx: ConvertContext,
+  tag: string,
+  fn: ts.ArrowFunction | ts.FunctionExpression
+): string {
+  const lifted = liftRenderProp(ctx, tag, fn);
+  if (lifted !== null) return lifted;
+  return `children={${renderExpr(ctx, fn)}}`;
 }
 
 function meaningfulChildren(children: ts.NodeArray<ts.JsxChild>): ts.JsxChild[] {
@@ -1137,7 +1862,7 @@ function emitJsxExpressionChild(ctx: ConvertContext, expr: ts.Expression, indent
   if (iteration) return iteration;
 
   // Plain expression sibling among other children.
-  return [`${pad}| #{${renderExpr(ctx, expr)}}`];
+  return pipeExpression(renderExpr(ctx, expr), indent);
 }
 
 /**
@@ -1152,10 +1877,23 @@ function emitConditional(
   keyword: "if" | "elseif"
 ): string[] {
   const pad = INDENT.repeat(indent);
-  const lines: string[] = [`${pad}${keyword} ${renderExpr(ctx, expr.condition)}`];
-  lines.push(...emitElementOrExpression(ctx, unwrapParens(expr.whenTrue), indent + 1));
 
-  const otherwise = unwrapParens(expr.whenFalse);
+  // `cond ? undefined : <A/>` is a one-armed `if` written inside out — the
+  // branch that renders is the false one, so the condition is negated and the
+  // empty arm disappears rather than becoming a line that renders nothing.
+  const whenTrue = unwrapParens(expr.whenTrue);
+  const whenFalse = unwrapParens(expr.whenFalse);
+  if (isNullish(whenTrue) && !isNullish(whenFalse)) {
+    return [
+      `${pad}${keyword} !(${renderExpr(ctx, expr.condition)})`,
+      ...emitElementOrExpression(ctx, whenFalse, indent + 1)
+    ];
+  }
+
+  const lines: string[] = [`${pad}${keyword} ${renderExpr(ctx, expr.condition)}`];
+  lines.push(...emitElementOrExpression(ctx, whenTrue, indent + 1));
+
+  const otherwise = whenFalse;
   if (ts.isConditionalExpression(otherwise)) {
     lines.push(...emitConditional(ctx, otherwise, indent, "elseif"));
     return lines;

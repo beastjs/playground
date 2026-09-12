@@ -33,12 +33,42 @@ Written in strict TypeScript — no `any`.
   Default (`import React from 'x'`), namespace (`import * as ns from 'x'`),
   combined (`import R, { a } from 'x'`) and bare side-effect (`import './a.css'`)
   imports are all preserved. A whole-statement `import type { ... }` is dropped,
-  as is an import whose every specifier was type-only.
-- Consecutive top-level `type` / `interface` / `const`/`let`/`var` declarations
-  are collected and wrapped in a single `module` block (2-space indented),
-  flushed right before the next function declaration (or at end of file).
-  Inside interfaces, a `ReactNode` (or `React.ReactNode`) property type becomes
-  `unknown`.
+  as is an import whose every specifier was type-only. The clause's phase is
+  read from `phaseModifier` (`ImportClause.isTypeOnly` is deprecated), so the
+  other phase it can carry, `import defer * as ns from "..."`, is preserved
+  rather than quietly emitted as an eager import — it decides when the module
+  evaluates. `ImportSpecifier.isTypeOnly`, the per-name `{ type B }` flag, is
+  not deprecated and is still read directly.
+- Output order is fixed, whatever order the TSX was written in: a module
+  directive, then the imports, then one `module` block with every top-level
+  `type` / `interface` / `const`/`let`/`var` declaration in source order
+  (2-space indented), then the `component` blocks, and last the file's own
+  template. Beast requires it — module code, imports, components, `props` and
+  `setup` must all precede template content (`BEAST1503_MISPLACED_DECLARATION`)
+  — and the declaration TSX conventionally writes at the *bottom* of a file,
+  the `const` collecting the exports, is exactly what that rule rejects. Moving
+  it up is safe: a `component` block compiles to a hoisted function
+  declaration, so an exports barrel above it still resolves. Inside interfaces,
+  a `ReactNode` (or `React.ReactNode`) property type becomes `unknown`.
+- `"use client"` and any other directive is emitted as `module "use client";`
+  *before* the imports, where a directive has to stay to remain one.
+- Only a function whose name is capitalized is a component. JSX resolves a
+  lowercase tag to an HTML element, so a hook or a helper — `useGroupContext`,
+  `formatLabel` — can never be one: it is declared as written inside `module`,
+  body and all, and joins the surrounding declarations instead of being flushed
+  between them. An anonymous `export default function` is exempt, since the
+  export itself says it is the file's component.
+
+  ```btsx
+  module
+    function useGroupContext(component: string) {
+      const context = useContext(GroupContext);
+      if (!context) {
+        throw new Error(`${component} must be used inside FluidTooltip.Group.`);
+      }
+      return context;
+    }
+  ```
 - Exactly one component in a file becomes the root: it emits `props { a, b }: T`
   at column 0 followed directly by the converted JSX, with the function name and
   any `export`/`export default` dropped. The `export default` component wins;
@@ -58,9 +88,31 @@ Written in strict TypeScript — no `any`.
   statement that prints on one line uses the inline `setup <stmt>;` form; a
   multi-line one (a block-bodied arrow, an `if`) uses the indented block form,
   since an unmarked continuation line would otherwise be parsed as markup.
+- `forwardRef((props, ref) => jsx)` is unwrapped rather than called. Octane has
+  no `forwardRef` — a ref is an ordinary prop there and nothing needs
+  forwarding (`beast-tsrx/examples/refs`) — so leaving the call in place would
+  emit a reference to an import that was just dropped. The function inside
+  becomes the component, and its second parameter rejoins the first as a `ref`
+  prop, placed ahead of any rest element so the binding pattern stays valid and
+  `ref` keeps out of the rest, exactly as `forwardRef` had it:
+
+  ```btsx
+  component Trigger
+    props { label, onFocus, ref, ...props }: TriggerProps & { ref: Ref<HTMLButtonElement> }
+    button({...props} ref={ref} onFocus={onFocus}) #{label}
+  ```
+
+  `forwardRef<HTMLElement, Props>` states both halves of that type; without the
+  type arguments the parameters' own annotations are used, and with neither the
+  `props` line is left untyped under a comment saying so. This works for
+  `const Name = forwardRef(...)`, for `export default forwardRef(...)` (which
+  becomes the file's own component), and for `React.forwardRef`. Once every use
+  is unwrapped the import is no longer reported as dropped — losing it is the
+  point. A `forwardRef` referenced anywhere else is still reported.
 - `const Name = (...) => ...` and `const Name = function () { ... }` are treated
-  the same way, but *only* when the initializer actually returns JSX; any other
-  arrow-valued `const` stays an ordinary `module` declaration. Concise arrow
+  the same way, but *only* when the name is capitalized and the initializer
+  actually returns JSX; any other arrow-valued `const` stays an ordinary
+  `module` declaration. Concise arrow
   bodies (`() => <div/>`) have no statements to hoist, so they emit no `setup`
   lines.
 
@@ -102,8 +154,48 @@ Written in strict TypeScript — no `any`.
   entirely when there are none. A JSX spread renders in place as `{...expr}` —
   the braces are required; Beast rejects a bare `...expr` with
   `BEAST1202_INVALID_ATTRIBUTE`.
-- When a tag line with two or more attributes would exceed 100 columns, the
-  attribute list is broken across `~` continuation lines:
+- A render prop — children written as a function the element calls itself,
+  `<Root>{({ payload }) => <Popup/>}</Root>` — is lifted into its own
+  `component` block, and the element gets a `children={...}` attribute that
+  calls it. It cannot stay an attribute expression: Beast's attribute scanner
+  reads the `/` in a closing tag as the start of a regular expression, so any
+  JSX left inside parentheses swallows the rest of the list and fails with
+  `BEAST1201_UNCLOSED_ATTRIBUTES`.
+
+  A `component` block is written at module scope and closes over nothing, so
+  every name the function read from the component around it — props, `setup`
+  values — becomes a prop, passed explicitly at the call site. Names that
+  resolve at module scope (imports, `module` declarations, other components)
+  and ambient globals are left alone, and a lowercase JSX tag is an element
+  rather than a reference.
+
+  ```btsx
+  // lifted from the Tooltip.Root render prop; className came from the component around it
+  // its props type is the one thing the conversion cannot infer — annotate it
+  component TooltipRootChildren
+    props { payload, className }
+    Tooltip.Portal
+      if payload
+        Tooltip.Popup(className={cn("base", className)}) #{payload.label}
+
+  Tooltip.Root(children={(state) => createElement(TooltipRootChildren, { ...state, className })})
+  ```
+
+  The attribute *creates* the element rather than calling the component: a
+  compiled component takes the runtime's own arguments beside its props, so
+  invoking it from the render prop — or handing the bare component to a library
+  that calls `children(state)` — leaves those undefined and it dies reading its
+  block. `createElement` is imported from Octane for this. When the function
+  captured nothing, the state object it destructures is already the props
+  object, so the call is just `createElement(Name, state)`. A render prop that
+  returns something other than JSX has no template to lift and stays the
+  expression it was.
+- When a tag line with two or more attributes would exceed 100 columns, *or* an
+  attribute value printed across more than one line, the attribute list is
+  broken across `~` continuation lines. Beast rejoins continuations with a
+  single space, so a multi-line handler body becomes one logical line — and
+  since a `//` comment would swallow everything joined after it, expressions
+  are printed without comments:
 
   ```btsx
   section(
@@ -135,6 +227,9 @@ Written in strict TypeScript — no `any`.
       with each branch's JSX indented one level further. A ternary in the false
       branch continues the chain as `elseif` rather than nesting a new `if`, and
       a false branch of `null` / `undefined` / `false` emits no `else` at all.
+      The mirror image — `{cond ? undefined : <A/>}`, a one-armed `if` written
+      inside out — negates the condition and keeps only the branch that
+      renders, instead of emitting an arm that renders nothing.
     - `{cond && <A/>}` becomes a bare `if <cond>` with no `else`.
     - Iteration becomes `each item, i in list`, followed by the returned JSX
       indented one level further. Two call shapes are recognized: the
@@ -187,6 +282,20 @@ rule:
   mistranslating that is worse than leaving the ternary as an `if`.
 - `switch` is recognised only in the immediately-invoked form. A `switch`
   statement in the function body before the `return` stays a `setup` statement.
+- A lifted render prop's props are untyped unless the source annotated the
+  parameter and the function captured nothing. The types of captured values
+  live in the component the function was lifted out of, which the generated
+  `component` block cannot name, so the conversion leaves the annotation off
+  and says so in a comment above the block. Under `strict` that is an implicit
+  `any`, so it is meant to be filled in.
+- The file's own component loses its name: Beast names the default export after
+  the file. Module code that referred to it by name — an exports barrel listing
+  every component in the file — no longer resolves, and there is no name the
+  conversion could substitute, so it writes a comment above the reference
+  instead. Keep the barrel in a sibling `.ts`, or leave the file's own
+  component out of it.
+- A render prop is only recognised as the sole child of its element. Children
+  mixing a function with other nodes are left alone.
 
 ## Files
 - `src/lib/tsx-btsx.ts` — the converter (`convertTsxToBtsx`).

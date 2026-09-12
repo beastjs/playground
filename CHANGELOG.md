@@ -5,6 +5,54 @@ All notable changes to `beast-converter` will be recorded here.
 ## [Unreleased]
 
 ### Fixed
+- Converter: a lifted render prop now creates its element with
+  `createElement(Name, props)` instead of calling the generated component. A
+  compiled component takes the runtime's own arguments beside its props, so
+  calling it directly — or passing the bare component to a library that invokes
+  `children(state)` — crashed at runtime reading `__s.block`.
+- Converter: `forwardRef((props, ref) => jsx)` is unwrapped into a plain
+  component whose props include `ref`, instead of being emitted as a call to an
+  import that had just been dropped for having no Octane equivalent. Octane
+  needs no wrapper — a ref is an ordinary prop. Handles
+  `const Name = forwardRef(...)`, `export default forwardRef(...)` and
+  `React.forwardRef`, takes the props type from `forwardRef<Element, Props>`
+  when it is written, and stops reporting the import as dropped once every use
+  is unwrapped.
+- Converter: `{cond ? undefined : <A/>}` emits a negated one-armed `if` rather
+  than an `if` whose first branch renders nothing.
+- Converter: import clauses are read through `phaseModifier` instead of the
+  deprecated `ImportClause.isTypeOnly`. That also fixes `import defer * as ns`,
+  whose `defer` was silently dropped: the phase decides when the module
+  evaluates. The per-specifier `ImportSpecifier.isTypeOnly` is not deprecated
+  and is unchanged.
+- Converter: declarations are no longer emitted after the template. Everything
+  a TSX file writes at the bottom — most often the `const` collecting the
+  exports — was emitted as a trailing `module` block, which Beast rejects with
+  `BEAST1503_MISPLACED_DECLARATION`. Output now has one fixed order: directive,
+  imports, a single `module` block, `component` blocks, then the file's own
+  template. A module reference to the file's own component (whose name Beast
+  replaces with the file's) is called out in a comment where it is written.
+- Converter: a directive such as `"use client"` is emitted as
+  `module "use client";` before the imports rather than after them.
+- Converter: render props (`<Root>{({ payload }) => <Popup/>}</Root>`) are now
+  converted instead of being emitted as pipe text that Beast rejected. The
+  function is lifted into its own `component` block — so its markup converts
+  like any other — and the element gets a `children={...}` attribute that calls
+  it, passing everything the function had closed over as props. JSX cannot stay
+  in an attribute: Beast reads the `/` of a closing tag as a regular
+  expression and fails with `BEAST1201_UNCLOSED_ATTRIBUTES`.
+- Converter: an attribute whose value printed across several lines — an event
+  handler with a block body — now becomes `~` continuation lines. It used to be
+  written as raw lines that Beast parsed as markup, leaving the attribute list
+  unclosed. Expressions are printed without comments, since continuations are
+  rejoined into one line where a `//` would swallow the rest.
+- Converter: a function whose name starts with a lowercase letter is no longer
+  turned into a `component` block. A hook or a helper such as
+  `useGroupContext` can never be a component (JSX reads a lowercase tag as an
+  HTML element), so it is now declared as written inside `module`. Printed
+  multi-line declarations and `setup` bodies are also re-indented from the
+  TypeScript printer's four spaces to the two-space BTSX indent, and a
+  statement that already closes with `}` no longer gets a stray `;`.
 - The `card` sample was a template literal with stray `~` continuation markers
   embedded in it, so the demo's headline output was unparseable garbage rather
   than converted BTSX.

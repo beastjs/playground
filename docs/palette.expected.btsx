@@ -17,9 +17,9 @@ setup
   const groups = useMemo(() => [...new Set(matches.map((command) => command.group))], [matches]);
 
   const run = useCallback((command: Command) => {
-      if (command.disabled)
-          return;
-      onRun(command.id);
+    if (command.disabled)
+      return;
+    onRun(command.id);
   }, [onRun]);
 #palette(
   ~ className="fixed inset-0 z-50 grid place-items-start p-4"

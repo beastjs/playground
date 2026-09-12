@@ -22,7 +22,11 @@ const config: Configuration = {
     // explicitly instead.
     beastOctane({
       components: {
-        'src/components/ui/avatar.btsx': { componentName: 'AvatarRoot' }
+        'src/components/ui/avatar.btsx': { componentName: 'AvatarRoot' },
+        // The file's own component here is the Group — the `props` block at
+        // column zero. Naming it explicitly keeps it out of the way of the
+        // `FluidTooltip` parts object the same file exports.
+        'src/components/ui/fluid-tooltip.btsx': { componentName: 'FluidTooltipGroup' }
       }
     })
   ],
