@@ -1,4 +1,4 @@
-import { HtmlRspackPlugin, type Configuration } from '@rspack/core'
+import { HtmlRspackPlugin, NormalModuleReplacementPlugin, type Configuration } from '@rspack/core'
 import { beastOctane } from 'beast-tsrx/rspack'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,6 +16,11 @@ const config: Configuration = {
   module: { rules: [{ test: /\.css$/u, type: 'css', use: ['postcss-loader'] }] },
   plugins: [
     new HtmlRspackPlugin({ template: './index.html' }),
+    // The TSRX panel runs `beast-tsrx`'s compiler in the browser. Its package
+    // entry also re-exports a file-system project builder, whose `node:`
+    // imports have no browser build; these shims stand in for them.
+    new NormalModuleReplacementPlugin(/^node:path$/u, path.resolve(root, 'src/lib/shims/node-path.ts')),
+    new NormalModuleReplacementPlugin(/^node:fs(\/promises)?$/u, path.resolve(root, 'src/lib/shims/node-fs.ts')),
     // `.btsx` files take their root component name from the filename, so
     // `avatar.btsx` would emit `export default function Avatar` and collide
     // with the `Avatar` parts object the file exports. Name the root

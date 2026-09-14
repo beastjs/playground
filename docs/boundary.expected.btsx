@@ -3,18 +3,20 @@ import { ErrorBoundary, Suspense, use } from "octane";
 module
   type Status = "draft" | "review" | "live" | "archived";
   interface Report {
-    id: string;
-    title: string;
-    status: Status;
-    rows: { id: string; label: string; value: number }[];
-  }
+    ~ id: string;
+    ~ title: string;
+    ~ status: Status;
+    ~ rows: { id: string; label: string; value: number }[];
+    ~ }
 component StatusBadge
   props { status }: { status: Status }
   span.badge(data-status={status})
     switch status
       case "draft"
         em Draft
-      case "review", "live"
+      case "review"
+        strong Published
+      case "live"
         strong Published
       default
         s Archived
@@ -29,6 +31,7 @@ component ReportTable
           tr(key={id})
             td.label #{label}
             td.value #{value}
+
 props { report, title }: { report: PromiseLike<Report>; title: string }
 fragment
   section.panel

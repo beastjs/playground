@@ -3,12 +3,12 @@ import { createContext, use, useState } from "octane";
 module
   type Status = "idle" | "loading" | "error";
   interface Post {
-    id: string;
-    author: { name: string; avatar: string };
-    body: string;
-    tags: string[];
-    likes: number;
-  }
+    ~ id: string;
+    ~ author: { name: string; avatar: string };
+    ~ body: string;
+    ~ tags: string[];
+    ~ likes: number;
+    ~ }
   const Locale = createContext<string>("en");
 component Avatar
   props { user }: { user: Post["author"] }
@@ -20,6 +20,7 @@ component Tags
       li.tag ##{tag}
 component Empty
   p.empty Nothing to read yet.
+
 props { posts, status, onRetry }: { posts: Post[]; status: Status; onRetry: () => void }
 setup
   const locale = use(Locale);

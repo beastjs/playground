@@ -23,6 +23,20 @@ export const EDGE_CASES: Record<string, string> = {
   // every line, or its closing brace lands at column 0.
   'multiline module const': `const cfg = { a: 1, b: { c: 2 } }
 export default function A({}: P) { return <p>{cfg.a}</p> }`,
+  // A type or interface spanning lines continues onto `~` lines inside `module`.
+  'multiline type alias': `type Variant = Base & {
+  inset?: boolean
+  size: "sm" | "lg"
+}
+export default function A({ a }: Variant) { return <p>{a}</p> }`,
+  'interface continuation': `interface Row<T> extends Base {
+  readonly id: string
+  nested: { a: T }
+  onPick(id: string): void
+  [key: string]: unknown
+}
+interface Empty {}
+export default function A({ a }: { a: Row<number> }) { return <p>{a.id}</p> }`,
   'object type alias': `type Late = { a: string; b: { c: number } }
 export default function A({ a }: Late) { return <p>{a}</p> }`,
   'module after component': `function H() { return <p>h</p> }
@@ -117,6 +131,25 @@ export default function A({ scale }: P) {
   'render prop taking no parameters': `export default function A({}: P) {
   return <Lazy>{() => <p>ready</p>}</Lazy>
 }`,
+  // The component the rest are named after is referenced by them, so it cannot
+  // become the file's template: it stays `NameRoot` and the template renders it.
+  'root named by its siblings': `function DropdownMenu({ ...props }: Root.Props) { return <Root {...props} /> }
+function DropdownMenuSub({ ...props }: ComponentProps<typeof DropdownMenu>) { return <DropdownMenu {...props} /> }
+export { DropdownMenu, DropdownMenuSub, }`,
+  'root only export': `function Menu({ a }: P) { return <p>{a}</p> }
+export { Menu }`,
+  'root without props': `export default function App() { return <p>hi</p> }`,
+  'no root component': `function Foo({ a }: P) { return <p>{a}</p> }
+function Bar({ b }: P) { return <p>{b}</p> }
+export { Foo, Bar }`,
+  // A props type that spans lines continues onto `~` lines, for helpers and the root alike.
+  'multiline props type': `function Item({ inset, ...props }: Item.Props & {
+  inset?: boolean;
+}) { return <div {...props} /> }
+export default function A({ a, b }: Base & {
+  a: string
+  b: number
+}) { return <Item inset /> }`,
   // Every line of a multi-line attribute value has to become a continuation.
   'multiline handler attribute': `export default function A({ onOpen }: P) {
   return <Root onOpenChange={(open) => {
@@ -193,6 +226,13 @@ import { persist } from 'zustand/middleware'
 import { useQuery } from '@tanstack/react-query'
 import * as Dialog from '@radix-ui/react-dialog'
 export default function A({ id }: P) { return <Dialog.Root>{id}</Dialog.Root> }`,
+  // Each branch of a ternary can be a loop of its own, and must become `each`
+  // rather than a `#{list.map(...)}` holding raw JSX.
+  'map in both conditional branches': `export default function A({ lines, code }: P) { return <code>{lines ? lines.map((line, i) => <span key={i} dangerouslySetInnerHTML={{ __html: line }} />) : code.split('\\n').map((line, i) => <span key={\`\${i}-\${line}\`}>{line || ' '}</span>)}</code> }`,
+  // Next's default `Link` has no port; TanStack Router's named `Link` stands in.
+  'next link import': `import Link from 'next/link'
+import NextLink from "next/link"
+export default function A({ id }: P) { return <div><Link to={id}>a</Link><NextLink to={id}>b</NextLink></div> }`,
   // `import defer` is a phase modifier, not a type-only flag: it changes when
   // the module evaluates and has to survive the rewrite.
   'deferred namespace import': `import defer * as heavy from "./heavy"
@@ -223,4 +263,62 @@ export default function A({ kids }: ProviderProps) { return <div>{kids}</div> }`
   React.useEffect(() => { console.log(v) }, [v])
   return <React.Fragment>{kids}{v}</React.Fragment>
 }`,
+
+  // Requoting printed text turned the apostrophe in a comment into a `"`, which
+  // then swallowed every line up to the next quote.
+  'apostrophe in comment': `export default function A({ s }: P) {
+  const v = useMemo(() => {
+    // it's not JSON
+    return s
+  }, [s])
+  return <p>{v}</p>
+}`,
+
+  // Every return but the last used to be dumped into setup as raw TSX.
+  'guard clause returns': `export default function A({ data, mode }: P) {
+  const x = 1
+  if (data === null) {
+    return <p className='empty'>No data</p>
+  }
+  if (mode === 'skip') return null
+  const label = String(data)
+  return <div>{label}{x}</div>
+}`,
+
+  // A helper that renders markup becomes a component; its calls become elements.
+  'lifted render helper': `export default function A({ items }: P) {
+  const [open, setOpen] = useState(false)
+  const renderItem = (item: Item, depth: number = 0): React.ReactNode => {
+    if (item.children.length === 0) return <span>{item.name}</span>
+    return <ul>{item.children.map((child) => <li key={child.id}>{renderItem(child, depth + 1)}</li>)}</ul>
+  }
+  return <div onClick={() => setOpen(!open)}>{open ? renderItem(items[0]) : null}</div>
+}`,
+
+  // A map callback with statements before its return needs a `scope`.
+  'map callback setup': `export default function A({ obj }: P) {
+  return <ul>{Object.keys(obj).map((key) => {
+    const value = obj[key]
+    return <li key={key}>{key}: {count} item{count !== 1 ? 's' : ''}</li>
+  })}</ul>
+}`,
+
+  // The file's component is the file's template, so Beast compiles it straight
+  // to the default export instead of a wrapper rendering a renamed component.
+  // Signal hooks also need Octane's `nativeReads`, which the check turns on.
+  'signals default export': `import { createScope } from 'octane/signals'
+import { useSignal$ } from 'octane/signals/client'
+// Shared state lives outside the component.
+const scope = createScope({ scopeKey: 'playground-signals' })
+const shared$ = scope.signal$('count', 0)
+export default function App() {
+  // Each instance owns its local signal.
+  const local$ = useSignal$(10)
+  return <button onClick={() => local$.set((count) => count + 1)}>{'Local: ' + local$.get() + shared$.get()}</button>
+}`,
+
+  // A React type imported without \`type\` is still a type.
+  'react type without type modifier': `import { ReactNode, useState } from 'react'
+interface Props { children?: ReactNode }
+export default function A({ children }: Props) { const [a] = useState(0); return <div>{children}{a}</div> }`,
 }

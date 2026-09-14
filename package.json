@@ -9,7 +9,8 @@
     "preview": "rspack serve --mode production",
     "typecheck": "tsrx-tsc --noEmit",
     "check": "bun run typecheck && bun run validate && bun run build",
-    "validate": "bun run scripts/validate.ts"
+    "validate": "bun run scripts/validate.ts",
+    "validate:types": "bun run scripts/validate.ts --types"
   },
   "dependencies": {
     "@octanejs/base-ui": "^0.1.51",

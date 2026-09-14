@@ -1,0 +1,310 @@
+module "use client";
+import { useMemo, useState } from "octane";
+import type { OctaneNode } from "octane";
+module
+  type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
+  type JsonObject = {
+    ~ [key: string]: JsonValue;
+    ~ };
+  type JsonArray = JsonValue[];
+  interface JsonViewerProps {
+    ~ data: unknown;
+    ~ maxHeight?: string;
+    ~ withToolbar?: boolean;
+    ~ children?: OctaneNode;
+    ~ }
+  type ViewMode = "tree" | "raw";
+// lifted from the renderValue helper; isExpanded, togglePath, isExpandable came from the component around it
+// its props type is the one thing the conversion cannot infer — annotate it
+component RenderValue
+  props { value, path = "", depth = 0, isChild = false, isExpanded, togglePath, isExpandable }
+  if value === null
+    span(className="font-mono text-zinc-500 dark:text-rose-300 italic") null
+  elseif typeof value === "number"
+    span(className="font-mono text-sky-600 dark:text-sky-300") #{String(value)}
+  elseif typeof value === "boolean"
+    span(className="font-mono text-indigo-600 dark:text-indigo-400") #{String(value)}
+  elseif typeof value === "string"
+    scope
+      setup const displayValue = value.length > 100 ? `${value.substring(0, 100)}...` : value;
+      span(className="text-orange-500 dark:text-orange-300")
+        | &quot;
+        span.wrap-break-words #{displayValue}
+        | &quot;
+  elseif Array.isArray(value)
+    if value.length === 0
+      span(className="text-zinc-500 dark:text-zinc-400") []
+    else
+      scope
+        setup const expanded = isExpanded(path);
+        if isChild
+          if !expanded
+            span(className="text-zinc-400 dark:text-zinc-500")
+              | [
+              span(className="text-zinc-600 dark:text-zinc-400") #{value.length} item#{value.length !== 1 ? "s" : ""}
+              | ]
+          else
+            div(className="mt-0.5")
+              div(className="space-y-1.5")
+                each item, index in value key index
+                  div(className="flex items-start justify-start gap-2")
+                    span(className="text-zinc-500 dark:text-zinc-500 text-xs shrink-0 mt-0.5") #{index}
+                    div(className="flex-1 min-w-0")
+                      RenderValue(
+                        ~ value={item}
+                        ~ path={`${path}[${index}]`}
+                        ~ depth={depth + 1}
+                        ~ isExpanded={isExpanded}
+                        ~ togglePath={togglePath}
+                        ~ isExpandable={isExpandable}
+                        ~ )
+        else
+          div
+            button(
+              ~ className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors group"
+              ~ onClick={() => togglePath(path)}
+              ~ )
+              span(className="text-zinc-400 dark:text-zinc-600 select-none text-[8px] w-3 flex items-center justify-center group-hover:text-zinc-600 dark:group-hover:text-zinc-400")
+                if expanded
+                  | #{"▼"}
+                else
+                  | #{"▶"}
+              span(className="text-zinc-400 dark:text-zinc-500") [
+              span(className="text-zinc-600 dark:text-zinc-400 font-medium") #{value.length} item#{value.length !== 1 ? "s" : ""}
+              span(className="text-zinc-400 dark:text-zinc-500") ]
+            if expanded
+              div(className="mt-1.5 space-y-1.5")
+                each item, index in value key index
+                  div(className="flex items-center gap-1")
+                    span(className="text-zinc-500 dark:text-zinc-500 text-[8px] shrink-0 mt-0.5") #{index}
+                    div(className="flex-1 min-w-0")
+                      RenderValue(
+                        ~ value={item}
+                        ~ path={`${path}[${index}]`}
+                        ~ depth={depth + 1}
+                        ~ isExpanded={isExpanded}
+                        ~ togglePath={togglePath}
+                        ~ isExpandable={isExpandable}
+                        ~ )
+  elseif typeof value === "object"
+    scope
+      setup
+        const obj = value as JsonObject;
+        const keys = Object.keys(obj);
+      if keys.length === 0
+        span(className="text-zinc-500 dark:text-zinc-400") #{"()"}
+      else
+        scope
+          setup const expanded = isExpanded(path);
+          if isChild
+            if !expanded
+              span(className="text-zinc-400 dark:text-zinc-500")
+                | #{"("}
+                span(className="text-zinc-600 dark:text-zinc-400") #{keys.length} key#{keys.length !== 1 ? "s" : ""}
+                | #{")"}
+            else
+              div(className="mt-0.5")
+                div(className="space-y-1.5")
+                  each key in keys key key
+                    scope
+                      setup
+                        const keyPath = path ? `${path}.${key}` : key;
+                        const childValue = obj[key];
+                        const childExpandable = isExpandable(childValue);
+                        const childExpanded = isExpanded(keyPath);
+                      div(className="flex items-start gap-2")
+                        if childExpandable
+                          button(
+                            ~ className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors group shrink-0"
+                            ~ onClick={() => togglePath(keyPath)}
+                            ~ )
+                            span(className="text-zinc-400 dark:text-zinc-600 select-none text-[8px] w-3 flex items-center justify-center group-hover:text-zinc-600 dark:group-hover:text-zinc-400")
+                              if childExpanded
+                                | #{"▼"}
+                              else
+                                | #{"▶"}
+                            span.font-medium #{key}:
+                        else
+                          span(className="text-zinc-700 dark:text-zinc-300 font-medium shrink-0") #{key}:
+                        div(className="flex-1 min-w-0")
+                          RenderValue(
+                            ~ value={childValue}
+                            ~ path={keyPath}
+                            ~ depth={depth + 1}
+                            ~ isExpanded={isExpanded}
+                            ~ togglePath={togglePath}
+                            ~ isExpandable={isExpandable}
+                            ~ )
+          else
+            div
+              button(
+                ~ className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors group"
+                ~ onClick={() => togglePath(path)}
+                ~ )
+                span(className="text-zinc-400 dark:text-zinc-600 select-none text-[10px] w-3 flex items-center justify-center group-hover:text-zinc-600 dark:group-hover:text-zinc-400")
+                  if expanded
+                    | #{"▼"}
+                  else
+                    | #{"▶"}
+                span(className="text-zinc-400 dark:text-zinc-500") #{"{"}
+                span(className="text-zinc-600 dark:text-zinc-400 font-medium") #{keys.length} key#{keys.length !== 1 ? "s" : ""}
+                span(className="text-zinc-400 dark:text-zinc-500") #{"}"}
+              if expanded
+                div(className="mt-1.5 space-y-1.5")
+                  each key in keys key key
+                    scope
+                      setup
+                        const keyPath = path ? `${path}.${key}` : key;
+                        const childValue = obj[key];
+                        const childExpandable = isExpandable(childValue);
+                        const childExpanded = isExpanded(keyPath);
+                      div(className="flex items-start gap-2")
+                        if childExpandable
+                          button(
+                            ~ className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors group shrink-0"
+                            ~ onClick={() => togglePath(keyPath)}
+                            ~ )
+                            span(className="text-zinc-400 dark:text-zinc-600 select-none text-[10px] w-3 flex items-center justify-center group-hover:text-zinc-600 dark:group-hover:text-zinc-400")
+                              if childExpanded
+                                | #{"▼"}
+                              else
+                                | #{"▶"}
+                            span.font-medium #{key}:
+                        else
+                          span(className="text-zinc-700 dark:text-zinc-300 font-medium shrink-0") #{key}:
+                        div(className="flex-1 min-w-0")
+                          RenderValue(
+                            ~ value={childValue}
+                            ~ path={keyPath}
+                            ~ depth={depth + 1}
+                            ~ isExpanded={isExpanded}
+                            ~ togglePath={togglePath}
+                            ~ isExpandable={isExpandable}
+                            ~ )
+  else
+    span(className="text-zinc-600 dark:text-zinc-400") #{String(value)}
+component JsonViewerRoot
+  props { data, maxHeight = "max-h-96", withToolbar = false, children }: JsonViewerProps
+  setup
+    const [viewMode, setViewMode] = useState<ViewMode>("tree");
+
+    // Expand root level by default
+    const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set([""]));
+
+    const jsonData = useMemo(() => {
+      if (data === null || data === undefined) {
+        return null;
+      }
+      if (typeof data === "string") {
+        try {
+          const parsed = JSON.parse(data);
+          return parsed;
+        }
+        catch {
+          // If it's not valid JSON, return as string
+          return data;
+        }
+      }
+      return data;
+    }, [data]);
+
+    const isValidJson = useMemo(() => {
+      if (jsonData === null || jsonData === undefined) {
+        return false;
+      }
+      if (typeof jsonData === "string") {
+        return false;
+      }
+      return typeof jsonData === "object" || Array.isArray(jsonData);
+    }, [jsonData]);
+
+    const togglePath = (path: string) => {
+      setExpandedPaths((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) {
+          next.delete(path);
+        }
+        else {
+          next.add(path);
+        }
+        return next;
+      });
+    };
+
+    const isExpanded = (path: string) => expandedPaths.has(path);
+
+    const isExpandable = (value: JsonValue): boolean => {
+      return ((Array.isArray(value) && value.length > 0) ||
+        (typeof value === "object" && value !== null && Object.keys(value).length > 0));
+    };
+
+    const formattedJson = useMemo(() => {
+      if (jsonData === null || jsonData === undefined) {
+        return "null";
+      }
+      if (typeof jsonData === "string") {
+        return jsonData;
+      }
+      try {
+        return JSON.stringify(jsonData, null, 2);
+      }
+      catch {
+        return String(jsonData);
+      }
+    }, [jsonData]);
+
+    const handleCopy = () => {
+      navigator.clipboard.writeText(formattedJson);
+      // You could add a toast notification here
+    };
+  if jsonData === null || jsonData === undefined
+    div(className="p-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded")
+      span(className="text-xs text-zinc-500 dark:text-zinc-400 italic") No data
+  elseif typeof jsonData === "string"
+    .space-y-2
+      div(className="flex items-center justify-end")
+        button(
+          ~ className="font-mono text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+          ~ onClick={handleCopy}
+          ~ )
+          | copy
+      div(className={`p-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded overflow-auto ${maxHeight}`})
+        pre(className="text-xs font-mono text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap wrap-break-word") #{jsonData}
+  else
+    .space-y-2
+      div(className="flex items-center space-x-2 h-10 px-1")
+        | #{children}
+        if withToolbar
+          div(className="flex items-center justify-between")
+            div(className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900 rounded-lg p-1")
+              button(
+                ~ onClick={() => setViewMode("tree")}
+                ~ className={`px-3 py-1 text-xs font-mono rounded transition-all ${viewMode === "tree"
+                ~ ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm" : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"}`}
+                ~ )
+                | tree
+              button(
+                ~ onClick={() => setViewMode("raw")}
+                ~ className={`px-3 py-1 text-xs font-mono rounded transition-all ${viewMode === "raw"
+                ~ ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm" : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"}`}
+                ~ )
+                | raw
+            button(
+              ~ className="font-mono text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+              ~ onClick={handleCopy}
+              ~ )
+              | copy
+      div(className={`p-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded overflow-auto ${maxHeight}`})
+        if viewMode === "tree" && isValidJson
+          div(className="font-mono text-xs leading-relaxed")
+            RenderValue(
+              ~ value={jsonData as JsonValue}
+              ~ isExpanded={isExpanded}
+              ~ togglePath={togglePath}
+              ~ isExpandable={isExpandable}
+              ~ )
+        else
+          pre(className="text-xs font-mono text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap wrap-break-word") #{formattedJson}
+
+props {...props}: JsonViewerProps
+JsonViewerRoot({...props})

@@ -4,9 +4,9 @@ import type { OctaneNode } from "octane";
 module
   type ThemeName = "light" | "dark";
   interface ProviderProps {
-    theme: ThemeName;
-    children: OctaneNode;
-  }
+    ~ theme: ThemeName;
+    ~ children: OctaneNode;
+    ~ }
   const Theme = createContext<ThemeName>("light");
 component ThemeLabel
   setup const theme = use(Theme);
@@ -14,6 +14,7 @@ component ThemeLabel
 component ThemeSwatch
   setup const theme = useContext(Theme);
   span(aria-label={"Theme swatch: " + theme} data-theme={theme})
+
 props { theme, children }: ProviderProps
 Theme.Provider(value={theme})
   section.theme-shell(data-theme={theme})

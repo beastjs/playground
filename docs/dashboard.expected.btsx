@@ -3,11 +3,12 @@ import { useMemo } from "octane";
 module
   type Range = "24h" | "7d" | "30d";
   interface Metric {
-    id: string;
-    label: string;
-    value: number;
-    delta: number;
-  }
+    ~ id: string;
+    ~ label: string;
+    ~ value: number;
+    ~ delta: number;
+    ~ }
+
 props { metrics, range, onRangeChange }: { metrics: Metric[]; range: Range; onRangeChange: (next: Range) => void }
 setup
   const ranges: Range[] = ["24h", "7d", "30d"];

@@ -32,7 +32,9 @@ Written in strict TypeScript — no `any`.
   `'react'` is rewritten to `"octane"`, quotes are doubled, a semicolon is added.
   Default (`import React from 'x'`), namespace (`import * as ns from 'x'`),
   combined (`import R, { a } from 'x'`) and bare side-effect (`import './a.css'`)
-  imports are all preserved. A whole-statement `import type { ... }` is dropped,
+  imports are all preserved — except `import Link from "next/link"`, which
+  becomes `import { Link } from "@octanejs/tanstack-router"` (a different local
+  name is kept as an alias). A whole-statement `import type { ... }` is dropped,
   as is an import whose every specifier was type-only. The clause's phase is
   read from `phaseModifier` (`ImportClause.isTypeOnly` is deprecated), so the
   other phase it can carry, `import defer * as ns from "..."`, is preserved
@@ -48,7 +50,9 @@ Written in strict TypeScript — no `any`.
   — and the declaration TSX conventionally writes at the *bottom* of a file,
   the `const` collecting the exports, is exactly what that rule rejects. Moving
   it up is safe: a `component` block compiles to a hoisted function
-  declaration, so an exports barrel above it still resolves. Inside interfaces,
+  declaration, so an exports barrel above it still resolves. A `type` or
+  `interface` that spans lines keeps its first line and continues every other
+  line — members and the closing brace — on `~` lines. Inside interfaces,
   a `ReactNode` (or `React.ReactNode`) property type becomes `unknown`.
 - `"use client"` and any other directive is emitted as `module "use client";`
   *before* the imports, where a directive has to stay to remain one.
@@ -115,6 +119,24 @@ Written in strict TypeScript — no `any`.
   `module` declaration. Concise arrow
   bodies (`() => <div/>`) have no statements to hoist, so they emit no `setup`
   lines.
+
+- Early returns become branches. A component body that returns from inside an
+  `if` emits its leading declarations as `setup` and the rest as an
+  `if` / `elseif` / `else` chain: the code after a guard is its `else`, a guard
+  directly followed by another continues as `elseif`, and declarations inside a
+  branch go into a `scope` block. A branch that returns `null` is dropped,
+  negating the condition when it was the `if` arm.
+- A helper in the body that returns JSX — `const renderValue = (value, path) =>
+  <span/>` — is lifted into a `component` block (`RenderValue`) when every use of
+  it is a call the template renders: a JSX child, a branch of a conditional
+  there, or a returned value. The calls become elements with the arguments as
+  props named after the parameters, and any names the helper read from the
+  component around it are passed along explicitly, as for a lifted render prop.
+  A helper used any other way stays in `setup`.
+- String literals are requoted on the AST, not on printed text, so an
+  apostrophe in a comment or JSX text is left alone.
+- `import { ReactNode } from "react"` without `type` is still recognised as a
+  type and renamed like one.
 
 **Block keywords**
 - A component whose root is an explicit `<>...</>` with more than one child emits
@@ -218,8 +240,10 @@ Written in strict TypeScript — no `any`.
     - Element/self-closing children recurse normally.
     - An immediately-invoked switch —
       `{(() => { switch (k) { case "a": return <A/>; default: return <D/> } })()}` —
-      becomes a `switch` block. Consecutive labels that share a body collapse
-      into one `case "b", "c"` arm, and a `return null` arm emits no body.
+      becomes a `switch` block. Consecutive labels that share a body each get
+      their own arm repeating it — `case "b", "c"` compiles to a comma
+      expression that only matches `"c"` — and a `return null` arm emits no
+      body.
     - A bare expression becomes `| #{expr}`. The pipe is not optional: an
       unprefixed `#{expr}` line is read as an id selector
       (`BEAST1101_INVALID_SELECTOR`).
@@ -250,16 +274,25 @@ Written in strict TypeScript — no `any`.
           setup const { id, name } = item;
           li(key={id}) #{name}
       ```
+    - A callback with statements before its `return` gets the same `scope`
+      block. Its key is still hoisted when it reads only the loop bindings.
+    - Among text, a ternary between values — `{n} item{n !== 1 ? 's' : ''}` —
+      stays interpolated. Splitting it into branches would put the text around
+      it on separate lines, and the spaces between them are lost.
 
 ## Known limitations
 
 This DSL was reverse-engineered from a single example, so a few areas are
 implemented with a reasonable-but-unverified fallback rather than a confirmed
 rule:
-- An early `return <jsx/>` guard clause is not understood. `splitBody` treats the
-  last `return` as the template and everything before it as `setup`, so a guard
-  clause is emitted as a `setup` block containing raw TSX — syntactically valid
-  but semantically wrong. Restructure guards as a ternary before converting.
+- A guard clause is only understood when its `then` branch always returns and
+  it sits directly in the body — declarations, then `if (...) return`, repeated.
+  A return inside a loop, `try` or `switch`, or an `if` that can fall through
+  into the code after it, has no branch form without duplicating that code, so
+  such a body keeps the old behaviour: the last `return` is the template and
+  everything before it is `setup`.
+- A lifted helper's props are untyped when it captured anything from the
+  component around it, for the same reason as a lifted render prop.
 - Only `className`, `id` and `key` get special treatment; other conventionally
   "special" props (e.g. `style`) are emitted as plain attributes. A `className`
   or `id` written *after* a JSX spread stays a plain attribute rather than a
@@ -288,12 +321,23 @@ rule:
   `component` block cannot name, so the conversion leaves the annotation off
   and says so in a comment above the block. Under `strict` that is an implicit
   `any`, so it is meant to be filled in.
-- The file's own component loses its name: Beast names the default export after
-  the file. Module code that referred to it by name — an exports barrel listing
-  every component in the file — no longer resolves, and there is no name the
-  conversion could substitute, so it writes a comment above the reference
-  instead. Keep the barrel in a sibling `.ts`, or leave the file's own
-  component out of it.
+- The file's own component is the default export when there is one, otherwise
+  the component every other component's name starts with; a file with neither
+  has no main. It is written as the file's template — `props`, `setup` and
+  markup at column 0 — which Beast compiles straight to
+  `export default function Name() @{ ... }`, and it is dropped from
+  `export { ... }` (Beast already exports it).
+
+  Beast names that default export after the file (`react-signal.btsx` exports
+  `ReactSignal`), so this only works when nothing else uses the component's own
+  name. When something does — a sibling rendering `<DropdownMenu>`, an exports
+  object, a component rendering itself — it falls back to a `component NameRoot`
+  block, references are renamed, and the template renders it:
+
+  ```
+  props props: MenuPrimitive.Root.Props
+  DropdownMenuRoot({...props})
+  ```
 - A render prop is only recognised as the sole child of its element. Children
   mixing a function with other nodes are left alone.
 
@@ -304,16 +348,26 @@ rule:
   each sample, kept as reference fixtures. The converter reproduces them exactly
   apart from the blank lines the goldens use to separate top-level blocks.
 
-## Validating against the real parser
+## Validating against the real toolchain
 
-`bun run validate` converts every sample plus a set of edge cases and feeds each
-result to `parse` from `beast-tsrx` — the same parser the compiler and the
-language server use. It is wired into `bun run check`.
+`bun run validate` converts every sample plus a set of edge cases and pushes
+each result through the stages a `.btsx` file goes through on its way into the
+app: `parse` from `beast-tsrx`, `compileBeastResult` down to TSRX, and Octane's
+own `compile` from `octane/compiler` on that TSRX. It is wired into
+`bun run check`.
 
-This is worth more than eyeballing the output: every rule documented above about
-spreads, the selector charset, loop bindings, pipe text and `module` indentation
-was found by the parser rejecting output that looked perfectly reasonable. When
-adding a converter feature, add a case to `scripts/edge-cases.ts` alongside it.
+The parser alone is not enough. Beast accepts output that only Octane rejects:
+bare text in an `@if` or `@catch` body is read as JavaScript, a branch may hold
+only one JSX root, and a wrapped `{ ...props, }` is a syntax error. Beast even
+compiles `case "b", "c"` to a comma expression that only ever matches `"c"`.
+Each of those was found by the Octane stage.
+
+`bun run validate:types` also typechecks the samples' TSRX with `tsrx-tsc`
+(written to `.beast/validate`). It is not part of `check`: the samples reference
+components they never declare. Edge cases are skipped there for the same reason.
+
+When adding a converter feature, add a case to `scripts/edge-cases.ts` alongside
+it. The playground's TSRX panel runs the same two compile stages live.
 
 `~/Code/beast/packages/language-server` is the other useful reference: its
 `BEAST_KEYWORDS` table is the definitive keyword list (note `fragment`, `scope`

@@ -2,12 +2,13 @@
 import { useCallback, useMemo, useRef, useState } from "octane";
 module
   interface Command {
-    id: string;
-    title: string;
-    group: string;
-    shortcut?: string;
-    disabled?: boolean;
-  }
+    ~ id: string;
+    ~ title: string;
+    ~ group: string;
+    ~ shortcut?: string;
+    ~ disabled?: boolean;
+    ~ }
+
 props { commands, recent, onRun }: { commands: Command[]; recent: string[]; onRun: (id: string) => void }
 setup
   const [query, setQuery] = useState("");

@@ -1,0 +1,55 @@
+module "use client";
+import DropdownMenu, { DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@/components/ui/dropdown-menu.btsx";
+import Button from '@/components/ui/button.btsx'
+import { useState } from "octane";
+import type { OctaneNode } from "octane";
+import { Icon, type IconName } from "@/lib/icons";
+
+module
+  interface SwitcherProps {
+    teams: {
+      id: string
+      label: string
+      icon: IconName
+      logo?: OctaneNode
+    }[]
+  }
+component TeamSwitcherRoot
+  props { teams }: SwitcherProps
+  setup
+    const [isMobile] = useState(false);
+    const [activeTeam, setActiveTeam] = useState(teams[0]);
+
+    if (!activeTeam) {
+      return null;
+    }
+    const trigger = <Button/>
+  DropdownMenu
+    DropdownMenuTrigger(render={trigger} className='hover:bg-background/70 data-pressed:bg-background px-1 rounded-lg gap-0.5')
+      div(className="flex aspect-square size-8 items-center justify-center rounded-lg text-sidebar-primary-foreground")
+        Icon(name={activeTeam.icon} className='size-4')
+      div(className="grid flex-1 text-left text-sm leading-tight")
+        span(className="font-medium capitalize truncate ") #{activeTeam.id}
+      Icon(name='select-caret' className='size-3 ml-1 opacity-70')
+    DropdownMenuContent(
+      ~ className="w-fit bg-background"
+      ~ align="start"
+      ~ side={isMobile ? "bottom" : "right"}
+      ~ sideOffset={4}
+      ~ )
+      DropdownMenuGroup
+        DropdownMenuLabel(className="text-xs text-muted-foreground") Teams
+        each team, index in teams key team.id
+          DropdownMenuItem(onClick={() => setActiveTeam(team)} className="gap-1 p-2 hover:bg-foreground/5")
+            div(className="flex size-6 items-center justify-center")
+              Icon(name={team.icon} className='size-4')
+            span(className='capitalize pe-2') #{team.id}
+      DropdownMenuSeparator
+      DropdownMenuGroup
+        DropdownMenuItem(className="gap-2 p-2")
+          div(className="flex size-6 items-center justify-center rounded-md border bg-transparent")
+            Icon(name='chevron-down-tiny' className='size-3')
+          div(className="font-medium text-muted-foreground") Add team
+
+props {...props}: SwitcherProps
+TeamSwitcherRoot({...props})

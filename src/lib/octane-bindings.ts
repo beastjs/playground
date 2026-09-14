@@ -149,6 +149,21 @@ const BINDING_PREFIXES: readonly (readonly [string, string])[] = [
   ["@radix-ui/react-", "@octanejs/radix"]
 ];
 
+/**
+ * Default imports that land on a named export of a different package, because
+ * the framework that provided them has no port and a binding offers the same
+ * component: `import Link from "next/link"` -> `import { Link } from
+ * "@octanejs/tanstack-router"`.
+ */
+const DEFAULT_IMPORT_REWRITES: Readonly<Record<string, { module: string; name: string }>> = {
+  "next/link": { module: "@octanejs/tanstack-router", name: "Link" }
+};
+
+/** Where a module's default import is re-homed as a named import, or null. */
+export function resolveDefaultImport(specifier: string): { module: string; name: string } | null {
+  return DEFAULT_IMPORT_REWRITES[specifier] ?? null;
+}
+
 /** React's own modules, which map onto the Octane runtime rather than a binding. */
 const REACT_MODULES = new Set(["react", "react-dom", "react-dom/client", "react-dom/server"]);
 

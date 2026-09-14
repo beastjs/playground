@@ -1,0 +1,46 @@
+import { Accordion as A } from "@octanejs/base-ui/accordion";
+import type {ComponentProps} from 'octane'
+import { cn } from "@/lib/utils";
+module
+  export { AccordionItem, AccordionTrigger, AccordionPanel };
+
+component AccordionComponent
+  props { className, ...props }: A.Root.Props
+  A.Root(
+    ~ data-slot="accordion"
+    ~ className={cn("cn-accordion flex w-full flex-col", className)}
+    ~ {...props}
+    ~ )
+component AccordionItem
+  props { className, ...props }: A.Item.Props
+  A.Item(
+    ~ data-slot="accordion-item"
+    ~ className={cn("cn-accordion-item", className)}
+    ~ {...props}
+    ~ )
+component AccordionTrigger
+  props { className, children, ...props }: A.Trigger.Props
+  A.Header(className="flex")
+    A.Trigger(
+      ~ data-slot="accordion-trigger"
+      ~ className={cn("cn-accordion-trigger group/accordion-trigger relative flex flex-1 items-start justify-between border border-transparent transition-all outline-none aria-disabled:pointer-events-none aria-disabled:opacity-50", className)}
+      ~ {...props}
+      ~ )
+      | #{children}
+      span(
+        ~ className="cn-accordion-trigger-icon pointer-events-none shrink-0 group-aria-expanded/accordion-trigger:hidden"
+        ~ ) &rarr;
+      span(
+        ~ className="cn-accordion-trigger-icon pointer-events-none hidden shrink-0 group-aria-expanded/accordion-trigger:inline"
+        ~ ) &darr;
+component AccordionPanel
+  props { className, children, ...props }: A.Panel.Props
+  A.Panel(
+    ~ data-slot="accordion-content"
+    ~ className="cn-accordion-content overflow-hidden"
+    ~ {...props}
+    ~ )
+    div(className={cn("cn-accordion-content-inner h-(--accordion-panel-height) data-ending-style:h-0 data-starting-style:h-0 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground [&_p:not(:last-child)]:mb-4", className)}) #{children}
+
+props {...props}: A.Root.Props
+AccordionComponent({...props})
