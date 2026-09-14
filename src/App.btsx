@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'octane'
+import { useState, useEffect, useMemo, useRef } from 'octane'
 import { Group, Panel, Separator } from '@octanejs/resizable-panels'
-import { convertTsxToBtsx } from '@/lib/tsx-btsx.ts'
+import { convertTsx, type ConversionDiagnostic } from '@/lib/tsx-btsx.ts'
 import { highlight } from '@/lib/shiki'
 import { SAMPLES } from '@/samples'
 import { measure, formatCount, formatReduction, type Metrics } from '@/lib/metrics'
@@ -16,6 +16,7 @@ module
   export interface Result {
     ok: boolean
     output: string
+    diagnostics?: readonly ConversionDiagnostic[]
   }
   const DESKTOP_QUERY = '(min-width: 1024px)'
   const SLIDE_COUNT = 3
@@ -97,7 +98,7 @@ component OutputPanel
     if check !== null && check.detail !== null
       p(
         ~ role="status"
-        ~ className='mt-4 rounded-xl bg-amber-400/10 px-3 py-2 font-mono text-xs leading-relaxed text-amber-200'
+        ~ className='mt-4 whitespace-pre-line rounded-xl bg-amber-400/10 px-3 py-2 font-mono text-xs leading-relaxed text-amber-200'
         ~ )
         | #{check.detail}
     if result.ok
@@ -124,24 +125,34 @@ setup
   const [isDesktop, setIsDesktop] = useState<boolean>(true);
   const [slide, setSlide] = useState<number>(0);
   const carouselRef = useRef<HTMLDivElement>(null);
-  const convert = (tsx: string): Result => {
+  // The whole pipeline is a function of the source alone. Everything else this
+  // component tracks — copy feedback, the carousel slide, each highlighter
+  // result landing — re-renders it, and recompiling on each of those runs
+  // Beast and Octane's compilers several times per keystroke.
+  const result = useMemo((): Result => {
     try {
-      return { ok: true, output: convertTsxToBtsx(tsx) };
+      const { code, diagnostics } = convertTsx(source);
+      return { ok: true, output: code, diagnostics };
     } catch (error) {
       return { ok: false, output: error instanceof Error ? error.message : String(error) };
     }
-  };
-  const result = convert(source);
+  }, [source]);
   // Both panels are measured the same way, so the two sets of counts compare.
-  const tsxMetrics = measure(source);
-  const btsxMetrics = measure(result.ok ? result.output : '');
+  const tsxMetrics = useMemo(() => measure(source), [source]);
+  const btsxMetrics = useMemo(() => measure(result.ok ? result.output : ''), [result]);
   const reduction = result.ok ? formatReduction(tsxMetrics.chars, btsxMetrics.chars) : null;
   // What Beast compiles the BTSX to, and whether Octane's compiler accepts it —
   // the parser alone lets through output that only fails at this stage.
-  const tsrx: TsrxResult = result.ok
+  const tsrx = useMemo((): TsrxResult => result.ok
     ? compileToTsrx(result.output)
-    : { ok: false, output: 'The TSX has to convert to BTSX before it can compile to TSRX.', octaneError: null };
-  const tsrxMetrics = measure(tsrx.ok ? tsrx.output : '');
+    : { ok: false, output: 'The TSX has to convert to BTSX before it can compile to TSRX.', octaneError: null }, [result]);
+  const tsrxMetrics = useMemo(() => measure(tsrx.ok ? tsrx.output : ''), [tsrx]);
+  // A conversion that compiles can still have dropped something on the way;
+  // the converter says what, and the BTSX panel passes it on.
+  const warnings = result.diagnostics ?? [];
+  const conversionCheck = warnings.length > 0
+    ? { ok: false, label: `${warnings.length} warning${warnings.length === 1 ? '' : 's'}`, detail: warnings.map((d) => `${d.line}:${d.column} ${d.message}`).join('\n') }
+    : null;
   const octaneCheck = tsrx.ok
     ? { ok: tsrx.octaneError === null, label: tsrx.octaneError === null ? 'octane ✓' : 'octane ✗', detail: tsrx.octaneError === null ? null : `Octane rejected this TSRX: ${tsrx.octaneError}` }
     : null;
@@ -343,6 +354,7 @@ main(className='grid min-h-screen min-w-[96vw] place-items-center')
               ~ reduction={reduction}
               ~ copied={copiedSide === 'right'}
               ~ onCopy={() => copy('right', result.output)}
+              ~ check={conversionCheck}
               ~ )
           Separator(className='panel-separator' aria-label="Resize panels")
           Panel(id="tsrx" minSize="22%")
@@ -390,6 +402,7 @@ main(className='grid min-h-screen min-w-[96vw] place-items-center')
                 ~ reduction={reduction}
                 ~ copied={copiedSide === 'right'}
                 ~ onCopy={() => copy('right', result.output)}
+                ~ check={conversionCheck}
                 ~ )
             div(className='panel-slide')
               OutputPanel(

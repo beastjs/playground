@@ -6,14 +6,37 @@ compiler API) rather than regex, so it handles nesting, quoting, and expressions
 correctly instead of guessing at string patterns.
 
 ```ts
-import { convertTsxToBtsx, BtsxConversionError } from "../src/lib/tsx-btsx";
+import { convertTsx, convertTsxToBtsx, BtsxConversionError } from "../src/lib/tsx-btsx";
 
 try {
   const btsx = convertTsxToBtsx(tsxSource);
+
+  // Or, with a report of anything the output could not carry over:
+  const { code, diagnostics } = convertTsx(tsxSource);
+  for (const d of diagnostics) console.warn(`${d.line}:${d.column} [${d.code}] ${d.message}`);
 } catch (error) {
   if (error instanceof BtsxConversionError) console.error(error.diagnostics);
 }
 ```
+
+A conversion that compiles can still have lost something — a boundary prop
+with nowhere to go, an early return with no template form. Rather than letting
+that surface at runtime, `convertTsx` returns a `diagnostics` list naming each
+one with its position in the TSX. The codes are a closed union
+(`ConversionDiagnosticCode`), so a caller can decide which ones matter:
+
+| code | meaning |
+| --- | --- |
+| `dropped-import` | a React import with no Octane counterpart was removed |
+| `unresolved-react-member` | a `React.Name` with no counterpart still refers to React |
+| `unconverted-early-return` | a `return` inside a loop, `try` or fall-through `if` was left in `setup` |
+| `unconverted-switch-case` | a `switch` arm that does not end in a return renders nothing |
+| `dropped-boundary-prop` | a `<Suspense>` / `<ErrorBoundary>` prop other than `fallback` was dropped |
+| `reevaluated-iterable` | a `.map` callback's array parameter is re-read from a non-trivial expression |
+| `dropped-overload` | a component overload signature was removed |
+| `untyped-props` | a lifted or unwrapped component's props could not be typed |
+
+The playground shows them as a warning badge on the BTSX panel.
 
 The TypeScript parser is error-tolerant and will happily return a tree full of
 garbage for garbage input. `convertTsxToBtsx` checks the parse diagnostics up
@@ -26,8 +49,9 @@ Written in strict TypeScript — no `any`.
 ## Rules implemented (reverse-engineered from the example)
 
 **Top level**
-- A `// comment` line directly preceding a statement is treated as a section
-  marker and reproduced as-is, flushing any pending `module` block first.
+- The `// comment` lines directly preceding a statement are reproduced as-is,
+  however many consecutive lines the comment runs to. A blank line ends the
+  run; a comment above it belongs to something else.
 - `import { a, type B, c } from 'react'` → type-only specifiers are dropped,
   `'react'` is rewritten to `"octane"`, quotes are doubled, a semicolon is added.
   Default (`import React from 'x'`), namespace (`import * as ns from 'x'`),
@@ -52,8 +76,18 @@ Written in strict TypeScript — no `any`.
   it up is safe: a `component` block compiles to a hoisted function
   declaration, so an exports barrel above it still resolves. A `type` or
   `interface` that spans lines keeps its first line and continues every other
-  line — members and the closing brace — on `~` lines. Inside interfaces,
-  a `ReactNode` (or `React.ReactNode`) property type becomes `unknown`.
+  line — members and the closing brace — on `~` lines. A `ReactNode` (or
+  `React.ReactNode`) type becomes `OctaneNode`, imported from `octane`.
+- An inline object type is written on one line with every member kept:
+  properties (with `readonly`), methods, and call and index signatures.
+- Printed statements are re-indented from the TypeScript printer's four spaces
+  to two, except inside a template literal, where whitespace is part of the
+  value. Beast strips only the block indent it added, so a `sql` or `css`
+  template reaches TSRX unchanged.
+- Every rewrite of printed code — requoting strings, renaming React types,
+  resolving `React.useState`, renaming the file's component — happens on the
+  AST, never on the printed text. A string, a comment or a line of JSX text that
+  happens to spell one of those names is left alone.
 - `"use client"` and any other directive is emitted as `module "use client";`
   *before* the imports, where a directive has to stay to remain one.
 - Only a function whose name is capitalized is a component. JSX resolves a
@@ -76,7 +110,8 @@ Written in strict TypeScript — no `any`.
 - Exactly one component in a file becomes the root: it emits `props { a, b }: T`
   at column 0 followed directly by the converted JSX, with the function name and
   any `export`/`export default` dropped. The `export default` component wins;
-  with no default export, the last component that takes props does. Inline object
+  with no default export, the component every other component's name starts
+  with does (see *Known limitations*). Inline object
   type literals (`{ x: string; y: number }`) are rendered on one line with
   `;`-separated members, matching the source style, at any nesting depth.
 - Every *other* component becomes a named `component Name` block with its own
@@ -242,8 +277,13 @@ Written in strict TypeScript — no `any`.
       `{(() => { switch (k) { case "a": return <A/>; default: return <D/> } })()}` —
       becomes a `switch` block. Consecutive labels that share a body each get
       their own arm repeating it — `case "b", "c"` compiles to a comma
-      expression that only matches `"c"` — and a `return null` arm emits no
-      body.
+      expression that only matches `"c"`. An arm is converted like a function
+      body: declarations before its `return` go into a `scope`, guards become
+      `if` chains, and a trailing `break` is ignored. An arm that renders
+      nothing (`return null`) is written `| #{null}` — Beast rejects an empty
+      arm (`BEAST1606_EMPTY_SWITCH_ARM`), and leaving it out would send its
+      label to `default`. An arm with no template form is reported as
+      `unconverted-switch-case`.
     - A bare expression becomes `| #{expr}`. The pipe is not optional: an
       unprefixed `#{expr}` line is read as an id selector
       (`BEAST1101_INVALID_SELECTOR`).
@@ -262,6 +302,11 @@ Written in strict TypeScript — no `any`.
       are supported, as either an expression body or a `{ return (...) }` block.
       A `key` prop on the produced element is hoisted onto the `each` line
       (`each item in list key item.id`) rather than left as an attribute.
+      A third callback parameter — the array itself — has no loop binding, so
+      it is declared in a `scope` from the iterable (`setup const all = xs;`).
+      An iterable that is anything but a plain name or property path is then
+      evaluated again on every iteration, which is reported as
+      `reevaluated-iterable`.
     - Beast requires one or two plain identifiers as loop bindings
       (`BEAST1402_INVALID_EACH_BINDING`), so a destructuring callback parameter
       is bound to a generated name and unpacked in a `scope` block instead. The
@@ -290,7 +335,11 @@ rule:
   A return inside a loop, `try` or `switch`, or an `if` that can fall through
   into the code after it, has no branch form without duplicating that code, so
   such a body keeps the old behaviour: the last `return` is the template and
-  everything before it is `setup`.
+  everything before it is `setup`. It is reported as
+  `unconverted-early-return`.
+- `<Suspense>` and `<ErrorBoundary>` props other than `fallback` (`onReset`,
+  `resetKeys`, a spread) have no place on a `try` block and are dropped, with a
+  `dropped-boundary-prop` diagnostic for each.
 - A lifted helper's props are untyped when it captured anything from the
   component around it, for the same reason as a lifted render prop.
 - Only `className`, `id` and `key` get special treatment; other conventionally
@@ -303,16 +352,9 @@ rule:
   a best guess.
 - `.map(cb)` is matched purely on the method name, so a non-array `.map()`
   (e.g. `new Map().map`) in JSX child position would also become an `each`.
-- The `empty`, `switch`/`case`/`default` and `try`/`pending`/`catch` keywords in
-  the BTSX grammar have no converter support. `empty` would mean guessing that a
-  condition tests the same list the `each` iterates, and mistranslating that is
-  worse than leaving the ternary as an `if`; the others have no unambiguous JSX
-  source form.
-- Consecutive `setup` statements are emitted one per line rather than grouped
-  into a single indented `setup` block. Both forms are valid.
-- `empty` (the `each` fallback branch) is still not emitted: it would mean
-  guessing that a condition tests the same list the `each` iterates, and
-  mistranslating that is worse than leaving the ternary as an `if`.
+- `empty` (the `each` fallback branch) is not emitted: it would mean guessing
+  that a condition tests the same list the `each` iterates, and mistranslating
+  that is worse than leaving the ternary as an `if`.
 - `switch` is recognised only in the immediately-invoked form. A `switch`
   statement in the function body before the `return` stays a `setup` statement.
 - A lifted render prop's props are untyped unless the source annotated the
@@ -332,7 +374,10 @@ rule:
   `ReactSignal`), so this only works when nothing else uses the component's own
   name. When something does — a sibling rendering `<DropdownMenu>`, an exports
   object, a component rendering itself — it falls back to a `component NameRoot`
-  block, references are renamed, and the template renders it:
+  block, references are renamed, and the template renders it. Only references
+  are renamed: `Card.displayName = "Card"` keeps its string, and an exports
+  object `{ Card }` becomes `{ Card: CardRoot }` so `Parts.Card` still
+  resolves:
 
   ```
   props props: MenuPrimitive.Root.Props
@@ -342,7 +387,31 @@ rule:
   mixing a function with other nodes are left alone.
 
 ## Files
-- `src/lib/tsx-btsx.ts` — the converter (`convertTsxToBtsx`).
+- `src/lib/tsx-btsx.ts` — the public entry point (`convertTsx`,
+  `convertTsxToBtsx`, `BtsxConversionError`), re-exported from
+  `src/lib/converter/`.
+- `src/lib/converter/` — the implementation, one module per concern:
+
+  | module | responsibility |
+  | --- | --- |
+  | `convert.ts` | entry point; orders the output sections Beast requires |
+  | `imports.ts` | React and npm imports rewritten onto Octane |
+  | `declarations.ts` | `module` members and inline type rendering |
+  | `components.ts` | component detection, `forwardRef`, the file's own template |
+  | `flow.ts` | `setup`, and early returns as `if` / `elseif` / `else` |
+  | `lift.ts` | helpers and render props lifted into `component` blocks |
+  | `scope.ts` | free-name analysis and collision-free generated names |
+  | `jsx.ts` | the template emitter: elements, attributes, children |
+  | `blocks.ts` | `each`, `switch`, `try`, `style` |
+  | `print.ts` | node printing, with requoting and renames done on the AST |
+  | `ast.ts`, `text.ts` | stateless AST questions and line utilities |
+  | `diagnostics.ts` | the thrown parse error and the warnings a result carries |
+  | `context.ts` | the state one conversion carries |
+
+  The emitter is recursive descent, so `jsx`, `blocks`, `flow` and `lift` call
+  one another; every module exports only functions and constants with no
+  import-time work, which keeps those cycles safe.
+- `tests/converter.test.ts` — behavioural tests (`bun test`).
 - `src/samples/index.ts` — the TSX sources that seed the playground.
 - `docs/*.expected.btsx` — expected output of
   each sample, kept as reference fixtures. The converter reproduces them exactly
@@ -368,6 +437,11 @@ components they never declare. Edge cases are skipped there for the same reason.
 
 When adding a converter feature, add a case to `scripts/edge-cases.ts` alongside
 it. The playground's TSRX panel runs the same two compile stages live.
+
+Validation proves output *compiles*; it cannot tell that valid output says the
+wrong thing — a label renamed, a type member dropped, a template literal's
+whitespace rewritten. `bun test` pins those down with assertions on the output
+and on the diagnostics, and is also part of `bun run check`.
 
 `~/Code/beast/packages/language-server` is the other useful reference: its
 `BEAST_KEYWORDS` table is the definitive keyword list (note `fragment`, `scope`

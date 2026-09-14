@@ -321,4 +321,48 @@ export default function App() {
   'react type without type modifier': `import { ReactNode, useState } from 'react'
 interface Props { children?: ReactNode }
 export default function A({ children }: Props) { const [a] = useState(0); return <div>{children}{a}</div> }`,
+
+  // The renamed root component is renamed where it is referenced, and nowhere
+  // else: a string or a label spelling its name keeps it, and a shorthand key
+  // keeps the name the app reads it by.
+  'root rename leaves text alone': `function Card({ a }: P) { return <p title="Card">Card: {a}</p> }
+Card.displayName = "Card"
+function CardHeader({ t }: P) { return <h2>Card header {t}</h2> }
+export const Parts = { Card, CardHeader }`,
+
+  // A helper lifted out of one component is not in scope in the next.
+  'helper scoped to its component': `function List({ xs }: P) {
+  const renderRow = (x: string) => <li>{x}</li>
+  return <ul>{renderRow(xs[0])}</ul>
+}
+export default function Table({ xs, renderRow }: Q) { return <div><span />{renderRow(xs)}</div> }`,
+
+  // Every member of an inline object type survives, not just its properties.
+  'inline type methods and index signatures': `export default function A({ a }: { a: { onPick(id: string): void; [k: string]: unknown; readonly id: string } }) { return <p>{a.id}</p> }`,
+
+  // Template literal content is a value, not indentation.
+  'template literal indentation': `const sql = \`
+    select *
+        from t
+\`
+export default function A({ a }: P) {
+  const css = \`
+    .x {
+        color: red;
+    }
+  \`
+  return <p>{a}{sql}{css}</p>
+}`,
+
+  // A switch arm with declarations keeps them in a \`scope\`.
+  'switch arm with setup': `export default function A({ k }: P) {
+  return <div>{(() => { switch (k) { case "a": { const n = 1; return <p>{n}</p> } case "b": return null; default: return <i /> } })()}</div>
+}`,
+
+  // Beast binds at most two names; the array argument is read from the iterable.
+  'map callback array parameter': `export default function A({ xs }: P) { return <ul>{xs.map((x, i, all) => <li key={i}>{all.length}</li>)}</ul> }`,
+
+  // An overload signature has no \`component\` form; the implementation stands.
+  'component overload': `export function Card(p: { a: string }): JSX.Element
+export function Card({ a }: { a: string }) { return <p>{a}</p> }`,
 }

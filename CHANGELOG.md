@@ -4,7 +4,61 @@ All notable changes to `beast-converter` will be recorded here.
 
 ## [Unreleased]
 
+### Added
+- Converter: `convertTsx(source)` returns `{ code, diagnostics }`, reporting
+  everything a conversion compiled but could not carry over faithfully — a
+  dropped boundary prop, an early return left in `setup`, an untyped lifted
+  component, a `React.Name` with no Octane counterpart — each with a code and
+  its line and column in the TSX. `convertTsxToBtsx` is unchanged. The
+  playground shows them as a warning badge on the BTSX panel.
+- `bun test` behavioural tests (`tests/converter.test.ts`) asserting on output
+  and diagnostics, run as part of `bun run check`. Validation proves output
+  compiles; these catch output that compiles and says the wrong thing.
+
+### Changed
+- Converter: split the 2,700-line `src/lib/tsx-btsx.ts` into
+  `src/lib/converter/`, one module per concern. The old path re-exports the
+  public API. Output was verified byte-identical across every sample, edge case
+  and component source before any behaviour changed.
+- Converter: ~15% faster. A node with nothing to rewrite is printed directly
+  instead of through a `ts.transform`, printers are shared across conversions,
+  and guard analysis caches its per-statement answers instead of re-walking the
+  same `if` chains once per nesting level.
+- Playground: the conversion, the Beast and Octane compiles and the metrics are
+  memoized on the source. Every unrelated re-render — copy feedback, a carousel
+  slide, each of the three highlighter results landing — used to rerun the
+  whole pipeline, several times per keystroke; the compile stages alone take
+  6–25 ms on the samples.
+
 ### Fixed
+- Converter: renaming the file's component to `NameRoot` rewrote every match
+  of the name in the output text, including strings (`displayName = "Card"`),
+  JSX text (`p Card details`), and shorthand keys — `{ Card }` became
+  `{ CardRoot }`, breaking `Parts.Card`. Renames now apply to references on the
+  AST only, and a shorthand property keeps its key (`{ Card: CardRoot }`).
+  React type renames (`ReactNode` -> `OctaneNode`) and `React.member`
+  resolution moved onto the AST the same way, so a string or comment spelling
+  one is left alone.
+- Converter: a helper lifted out of one component stayed registered for the
+  rest of the file, so a later component calling a prop of the same name
+  (`renderRow(xs)`) was emitted as the first component's lifted element.
+- Converter: an inline object type dropped every member that was not a
+  property — methods, index and call signatures — and `readonly`.
+- Converter: re-indenting printed statements also rewrote whitespace inside
+  multi-line template literals, changing the string's value.
+- Converter: only the last line of a multi-line `//` comment above a statement
+  was kept.
+- Converter: a `switch` arm whose return was wrapped in a block or preceded by
+  declarations was emitted empty, silently losing the arm; arms are now
+  converted like a function body. An arm that renders nothing is written
+  `| #{null}` instead of being left empty, which Beast rejected
+  (`BEAST1606_EMPTY_SWITCH_ARM`).
+- Converter: `.map((item, index, array) => ...)` emitted three loop bindings,
+  which Beast rejects (`BEAST1402_INVALID_EACH_BINDING`); the array parameter is
+  now declared from the iterable. Two destructured parameters no longer share
+  one generated name.
+- Converter: a component's overload signature was picked as the component
+  itself, emitting an empty template and demoting the implementation.
 - Converter: a lifted render prop now creates its element with
   `createElement(Name, props)` instead of calling the generated component. A
   compiled component takes the runtime's own arguments beside its props, so
