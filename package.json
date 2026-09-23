@@ -14,27 +14,27 @@
     "validate:types": "bun run scripts/validate.ts --types"
   },
   "dependencies": {
-    "@octanejs/base-ui": "^0.1.54",
-    "@octanejs/radix": "^0.1.54",
-    "@octanejs/resizable-panels": "^0.0.10",
-    "@octanejs/vaul": "^0.0.19",
-    "beast-tsrx": "0.2.62",
+    "@octanejs/base-ui": "^0.1.55",
+    "@octanejs/radix": "^0.1.55",
+    "@octanejs/resizable-panels": "^0.0.13",
+    "@octanejs/vaul": "^0.0.22",
+    "beast-tsrx": "0.3.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "highlight.js": "^11.12.0",
-    "octane": "0.2.13",
+    "octane": "0.4.3",
     "shiki": "^4.4.3",
     "tailwind-merge": "^3.7.0",
-    "typescript": "^5.9.3"
+    "typescript": "5.9.3"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
-    "@tsrx/typescript-plugin": "0.3.135",
+    "@tsrx/typescript-plugin": "0.4.8",
     "tailwindcss": "^4.3.3",
-    "@rspack/core": "^2.2.6",
-    "@rspack/cli": "^2.2.6",
+    "@rspack/core": "^2.2.7",
+    "@rspack/cli": "^2.2.7",
     "@rspack/dev-server": "^2.2.1",
-    "@octanejs/rspack-plugin": "0.1.50",
+    "@octanejs/rspack-plugin": "0.1.52",
     "@tailwindcss/postcss": "^4.3.3",
     "postcss-loader": "^8.2.1"
   }

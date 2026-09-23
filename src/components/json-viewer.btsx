@@ -14,10 +14,18 @@ module
     ~ children?: OctaneNode;
     ~ }
   type ViewMode = "tree" | "raw";
+  interface RenderValueProps {
+    ~ value: JsonValue;
+    ~ path?: string;
+    ~ depth?: number;
+    ~ isChild?: boolean;
+    ~ isExpanded: (path: string) => boolean;
+    ~ togglePath: (path: string) => void;
+    ~ isExpandable: (value: JsonValue) => boolean;
+    ~ }
 // lifted from the renderValue helper; isExpanded, togglePath, isExpandable came from the component around it
-// its props type is the one thing the conversion cannot infer — annotate it
 component RenderValue
-  props { value, path = "", depth = 0, isChild = false, isExpanded, togglePath, isExpandable }
+  props { value, path = "", depth = 0, isChild = false, isExpanded, togglePath, isExpandable }: RenderValueProps
   if value === null
     span(className="font-mono text-zinc-500 dark:text-rose-300 italic") null
   elseif typeof value === "number"
