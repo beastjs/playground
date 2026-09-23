@@ -87,7 +87,7 @@ export function liftHelpers(ctx: ConvertContext, body: ts.Block): ts.Statement[]
     pushLiftedComponent(ctx, {
       component: helper.component,
       origin: `the ${name} helper`,
-      fn,
+      body: fn.body,
       bindings,
       annotation,
       captures: helper.captures
@@ -108,7 +108,8 @@ function pushLiftedComponent(
     component: string
     /** `the renderRow helper`, `the Root render prop`. */
     origin: string
-    fn: ts.ArrowFunction | ts.FunctionExpression
+    /** What the block renders: a function's body, or an element as written. */
+    body: ts.ConciseBody
     /** The props pattern's members: the function's own parameters, then its captures. */
     bindings: string[]
     /** `: { ... }`, or empty when the props could not be typed. */
@@ -116,10 +117,10 @@ function pushLiftedComponent(
     captures: string[]
   }
 ): void {
-  const { component, origin, fn, bindings, annotation, captures } = lifted
+  const { component, origin, bindings, annotation, captures } = lifted
   const body: string[] = []
   if (bindings.length > 0) body.push(...propsLines(`{ ${bindings.join(', ')} }${annotation}`))
-  const { setup, template } = renderBody(ctx, fn.body)
+  const { setup, template } = renderBody(ctx, lifted.body)
   body.push(...renderSetupBlock(ctx, setup), ...template)
 
   const notes = [
@@ -129,7 +130,7 @@ function pushLiftedComponent(
   ]
   if (bindings.length > 0 && annotation === '') {
     notes.push('// its props type is the one thing the conversion cannot infer — annotate it')
-    report(ctx, fn, 'untyped-props', `${component}, lifted from ${origin}, has untyped props`)
+    report(ctx, lifted.body, 'untyped-props', `${component}, lifted from ${origin}, has untyped props`)
   }
   ctx.lifted.push([...notes, `component ${component}`, ...indentLines(body, 1)])
 }
@@ -256,7 +257,7 @@ export function liftRenderProp(ctx: ConvertContext, tag: string, fn: ts.ArrowFun
   const annotation =
     parameter && parameter.type && captures.length === 0 ? `: ${renderTypeInline(ctx, parameter.type)}` : ''
 
-  pushLiftedComponent(ctx, { component: name, origin: `the ${tag} render prop`, fn, bindings, annotation, captures })
+  pushLiftedComponent(ctx, { component: name, origin: `the ${tag} render prop`, body: fn.body, bindings, annotation, captures })
 
   // A destructuring render prop that captured nothing is already shaped like a
   // component: the state object it unpacks *is* the props object.
@@ -278,4 +279,67 @@ export function liftRenderProp(ctx: ConvertContext, tag: string, fn: ts.ArrowFun
   }
   if (captures.length === 0) return `children={() => ${create}(${name}, {})}`
   return `children={() => ${create}(${name}, { ${captures.join(', ')} })}`
+}
+
+/**
+ * Lifts an element passed as an attribute — `activeIcon={<CheckIcon />}` — into
+ * its own `component` block, and returns the attribute that creates it. BTSX
+ * attributes hold TypeScript expressions, so markup left there would stay JSX
+ * rather than become template; lifted, it converts like any other markup.
+ *
+ * The attribute still hands the component an element, created where the JSX
+ * was: `activeIcon={createElement(ActiveIcon, { iconClassName })}`. What the
+ * element read from the component around it is passed as props, the way a
+ * lifted render prop's captures are.
+ */
+export function liftElementAttribute(ctx: ConvertContext, attrName: string, element: ts.Expression): string {
+  const captures = collectFreeNames(ctx, element)
+  const name = uniqueName(ctx, attrName.charAt(0).toUpperCase() + attrName.slice(1))
+  pushLiftedComponent(ctx, {
+    component: name,
+    origin: `the ${attrName} attribute`,
+    body: element,
+    bindings: captures,
+    annotation: capturedPropsType(ctx, element, captures),
+    captures
+  })
+  const props = captures.length === 0 ? '{}' : `{ ${captures.join(', ')} }`
+  return `${attrName}={${octaneCreateElement(ctx)}(${name}, ${props})}`
+}
+
+/**
+ * The props type for names an element took from the component around it, when
+ * every one is a prop that component declared in an inline object type:
+ * `{ iconClassName }` from `{ iconClassName?: string }` is typed exactly as the
+ * component typed it. Anything else — a `setup` value, a named props type —
+ * has no type written down to copy, and is left for the author to annotate.
+ */
+function capturedPropsType(ctx: ConvertContext, node: ts.Node, captures: readonly string[]): string {
+  if (captures.length === 0) return ''
+  let fn: ts.Node | undefined = node.parent
+  while (fn !== undefined && !ts.isFunctionLike(fn)) fn = fn.parent
+  if (fn === undefined || fn.parameters.length !== 1) return ''
+
+  const [parameter] = fn.parameters
+  if (!ts.isObjectBindingPattern(parameter.name) || !parameter.type || !ts.isTypeLiteralNode(parameter.type)) return ''
+  const pattern = parameter.name
+  const members = parameter.type.members
+
+  const fields: string[] = []
+  for (const capture of captures) {
+    // Bound under its own name, straight from the props object.
+    const element = pattern.elements.find(
+      (el) => ts.isIdentifier(el.name) && el.name.text === capture && !el.dotDotDotToken
+    )
+    if (element === undefined) return ''
+    const key = element.propertyName ? element.propertyName.getText(ctx.sourceFile) : capture
+    const member = members.find(
+      (m): m is ts.PropertySignature => ts.isPropertySignature(m) && m.name.getText(ctx.sourceFile) === key
+    )
+    if (member === undefined || member.type === undefined) return ''
+    // A default fills in a missing value, so inside the component it is always there.
+    const optional = member.questionToken && element.initializer === undefined ? '?' : ''
+    fields.push(`${capture}${optional}: ${renderTypeInline(ctx, member.type)}`)
+  }
+  return `: { ${fields.join('; ')} }`
 }

@@ -15,13 +15,6 @@ export interface TsrxResult {
   octaneError: string | null
 }
 
-/**
- * `nativeReads` is Octane's opt-in for signal hooks (`useSignal$` and friends).
- * Without it a file using them is rejected outright, whatever the conversion
- * did, so the check turns it on to judge the conversion rather than the config.
- */
-export const OCTANE_OPTIONS = { nativeReads: true }
-
 const firstLine = (error: unknown) => String(error instanceof Error ? error.message : error).split('\n')[0]
 
 export function compileToTsrx(btsx: string): TsrxResult {
@@ -38,7 +31,8 @@ export function compileToTsrx(btsx: string): TsrxResult {
   }
 
   try {
-    compile(code, 'component.tsrx', OCTANE_OPTIONS)
+    // Octane detects signals from imports; no compiler opt-in is needed.
+    compile(code, 'component.tsrx')
     return { ok: true, output: code, octaneError: null }
   } catch (error) {
     return { ok: true, output: code, octaneError: firstLine(error) }

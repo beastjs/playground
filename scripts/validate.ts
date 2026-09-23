@@ -26,7 +26,6 @@ import { compileBeastResult, parse } from 'beast-tsrx'
 import { compile } from 'octane/compiler'
 import { mkdir, rm } from 'node:fs/promises'
 import { convertTsxToBtsx } from '../src/lib/tsx-btsx.ts'
-import { OCTANE_OPTIONS } from '../src/lib/tsrx.ts'
 import { SAMPLES } from '../src/samples/index.ts'
 import { EDGE_CASES } from './edge-cases.ts'
 
@@ -74,7 +73,7 @@ function runStages(label: string, stem: string, tsx: string): Stage {
   }
 
   try {
-    compile(tsrx, `${stem}.tsrx`, OCTANE_OPTIONS)
+    compile(tsrx, `${stem}.tsrx`)
   } catch (error) {
     console.error(`✗ ${label}: Octane rejected the compiled TSRX — ${firstLine(error)}`)
     return { ok: false, btsx, tsrx }

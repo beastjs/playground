@@ -16,6 +16,9 @@ All notable changes to `beast-converter` will be recorded here.
   compiles; these catch output that compiles and says the wrong thing.
 
 ### Changed
+- Align the converter toolchain with Beast 0.2.62, Octane 0.2.13, and the
+  Octane Rspack plugin 0.1.50. Signal imports enable native reads automatically;
+  conversion validation no longer passes the removed `nativeReads` option.
 - Converter: split the 2,700-line `src/lib/tsx-btsx.ts` into
   `src/lib/converter/`, one module per concern. The old path re-exports the
   public API. Output was verified byte-identical across every sample, edge case
@@ -31,6 +34,10 @@ All notable changes to `beast-converter` will be recorded here.
   6–25 ms on the samples.
 
 ### Fixed
+- Preserve non-React type imports, including native Octane signal types.
+- Convert text-field `onChange` to native `onInput` for per-edit updates.
+  Preserve explicit commit-on-change hints and non-text controls; report
+  ambiguous spreads, dynamic input types, and existing `onInput` handlers.
 - Converter: renaming the file's component to `NameRoot` rewrote every match
   of the name in the output text, including strings (`displayName = "Card"`),
   JSX text (`p Card details`), and shorthand keys — `{ Card }` became
@@ -262,4 +269,3 @@ rejected, so the converter had been emitting uncompilable output:
   `(error, reset) => jsx` fallback supplies the `catch` bindings.
 - New `boundary` sample exercising all four alongside `component`, `module` and
   `scope`, plus six edge cases covering them.
-

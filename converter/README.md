@@ -35,6 +35,7 @@ one with its position in the TSX. The codes are a closed union
 | `reevaluated-iterable` | a `.map` callback's array parameter is re-read from a non-trivial expression |
 | `dropped-overload` | a component overload signature was removed |
 | `untyped-props` | a lifted or unwrapped component's props could not be typed |
+| `native-change-handler` | a text-field `onChange` needs review because its type or handlers are ambiguous |
 
 The playground shows them as a warning badge on the BTSX panel.
 
@@ -48,18 +49,25 @@ Written in strict TypeScript — no `any`.
 
 ## Rules implemented (reverse-engineered from the example)
 
+**Native input events**
+- Text inputs and textareas convert `onChange` to `onInput` to preserve React's
+  per-edit updates. Non-text controls and component callbacks retain `onChange`.
+- `suppressNativeChangeWarning` preserves an intentional native change handler.
+  Spreads, dynamic input types, and an existing `onInput` make rewriting
+  ambiguous; the converter retains the handler and reports `native-change-handler`.
+
 **Top level**
 - The `// comment` lines directly preceding a statement are reproduced as-is,
   however many consecutive lines the comment runs to. A blank line ends the
   run; a comment above it belongs to something else.
-- `import { a, type B, c } from 'react'` → type-only specifiers are dropped,
-  `'react'` is rewritten to `"octane"`, quotes are doubled, a semicolon is added.
+- React imports resolve to Octane's corresponding value and type exports.
+  Other type-only imports and inline `type` specifiers are preserved, including
+  signal types and application props. Quotes are doubled and a semicolon is added.
   Default (`import React from 'x'`), namespace (`import * as ns from 'x'`),
   combined (`import R, { a } from 'x'`) and bare side-effect (`import './a.css'`)
   imports are all preserved — except `import Link from "next/link"`, which
   becomes `import { Link } from "@octanejs/tanstack-router"` (a different local
-  name is kept as an alias). A whole-statement `import type { ... }` is dropped,
-  as is an import whose every specifier was type-only. The clause's phase is
+  name is kept as an alias). The clause's phase is
   read from `phaseModifier` (`ImportClause.isTypeOnly` is deprecated), so the
   other phase it can carry, `import defer * as ns from "..."`, is preserved
   rather than quietly emitted as an eager import — it decides when the module
@@ -148,6 +156,14 @@ Written in strict TypeScript — no `any`.
   becomes the file's own component), and for `React.forwardRef`. Once every use
   is unwrapped the import is no longer reported as dropped — losing it is the
   point. A `forwardRef` referenced anywhere else is still reported.
+- An `async` component loses `async`: Octane components are synchronous and
+  suspend by reading a promise with `use()` under `Suspense`. Every `await x`
+  in the component's own body becomes `use(x)`, and `use` is imported from
+  `octane`, or taken from an existing import of React's `use`. An `await` in
+  a function nested inside the component, such as an `async` handler, is left
+  alone. Awaiting anything other than a reference to an existing promise, such
+  as `await fetchUser(id)`, is reported as `uncached-use-promise`, because
+  that creates a new promise on every render and it never settles.
 - `const Name = (...) => ...` and `const Name = function () { ... }` are treated
   the same way, but *only* when the name is capitalized and the initializer
   actually returns JSX; any other arrow-valued `const` stays an ordinary
@@ -247,6 +263,21 @@ Written in strict TypeScript — no `any`.
   object, so the call is just `createElement(Name, state)`. A render prop that
   returns something other than JSX has no template to lift and stays the
   expression it was.
+- An element passed as an attribute, like `activeIcon={<CheckIcon />}`, is
+  lifted the same way. BTSX attributes hold TypeScript expressions, so markup
+  left there would stay JSX. The markup moves into a `component` block named
+  after the attribute, and the attribute creates it. Any names it used from the
+  component around it are passed in as props. A name that was a prop declared
+  in an inline object type keeps its declared type. Any other name, such as a
+  `setup` value, is reported as `untyped-props`.
+
+  ```btsx
+  component ActiveIcon
+    props { iconClassName }: { iconClassName?: string }
+    CheckCircledIcon(className={cn("size-4", iconClassName)})
+
+  AnimatedIcon(active={copied} activeIcon={createElement(ActiveIcon, { iconClassName })})
+  ```
 - When a tag line with two or more attributes would exceed 100 columns, *or* an
   attribute value printed across more than one line, the attribute list is
   broken across `~` continuation lines. Beast rejoins continuations with a
@@ -460,4 +491,3 @@ confirmed there rather than inferred.
 Note that `examples/card/card.btsx` writes the key as an attribute
 (`li.message(key={message.id})`) while `examples/catalog` and `examples/actions`
 use the `each ... key` clause. This converter emits the clause form.
-

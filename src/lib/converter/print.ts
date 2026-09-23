@@ -2,8 +2,10 @@
 
 import ts from 'typescript'
 import { resolveReactExport, resolveReactType } from '../octane-bindings'
+import { unwrapParens } from './ast'
 import type { ConvertContext } from './context'
 import { report } from './diagnostics'
+import { uniqueName } from './scope'
 import { INDENT } from './text'
 
 /**
@@ -59,7 +61,8 @@ function printRewritten(ctx: ConvertContext, printer: ts.Printer, node: ts.Node)
 
   const result = ts.transform(node, [
     (context) => {
-      const visit = (child: ts.Node): ts.Node => rewriteNode(ctx, child) ?? ts.visitEachChild(child, visit, context)
+      const visit = (child: ts.Node): ts.Node =>
+        rewriteNode(ctx, child, visit) ?? ts.visitEachChild(child, visit, context)
       return (root) => visit(root)
     }
   ])
@@ -79,6 +82,7 @@ function printRewritten(ctx: ConvertContext, printer: ts.Printer, node: ts.Node)
 /** Whether anything under a node is one of the things `rewriteNode` replaces. */
 function needsRewrite(ctx: ConvertContext, node: ts.Node): boolean {
   if (ts.isStringLiteral(node)) return true
+  if (isComponentAwait(ctx, node)) return true
   if (ts.isIdentifier(node)) {
     return node.text === 'React' || ctx.renames.has(node.text) || ctx.reactTypes.has(node.text)
   }
@@ -86,7 +90,18 @@ function needsRewrite(ctx: ConvertContext, node: ts.Node): boolean {
 }
 
 /** The replacement for one node, or undefined to keep it and visit its children. */
-function rewriteNode(ctx: ConvertContext, node: ts.Node): ts.Node | undefined {
+function rewriteNode(ctx: ConvertContext, node: ts.Node, visit: (node: ts.Node) => ts.Node): ts.Node | undefined {
+  // `(await highlighter).codeToTokens(...)`: the call `use()` becomes needs no
+  // parentheses of its own, except as the target of `new`.
+  if (
+    ts.isParenthesizedExpression(node) &&
+    isComponentAwait(ctx, node.expression) &&
+    !(node.parent && ts.isNewExpression(node.parent))
+  ) {
+    return rewriteNode(ctx, node.expression, visit)
+  }
+  if (isComponentAwait(ctx, node)) return renderUseCall(ctx, node, visit)
+
   // A new literal is escaped to ASCII unless told otherwise; `"▼"` would come
   // out as `"▼"`.
   if (ts.isStringLiteral(node)) {
@@ -124,6 +139,60 @@ function rewriteNode(ctx: ConvertContext, node: ts.Node): ts.Node | undefined {
     }
   }
   return undefined
+}
+
+/**
+ * An `await` that belongs to an async component's own body, rather than to a
+ * function nested inside it. Octane components are synchronous: a component
+ * suspends on a promise by reading it with `use()` under `Suspense`
+ * (`beast-tsrx/examples/async`), which is what the `await` becomes.
+ */
+function isComponentAwait(ctx: ConvertContext, node: ts.Node): node is ts.AwaitExpression {
+  if (!ts.isAwaitExpression(node) || ctx.asyncComponents.size === 0) return false
+  let current: ts.Node | undefined = node.parent
+  while (current !== undefined && !ts.isFunctionLike(current)) current = current.parent
+  return current !== undefined && ctx.asyncComponents.has(current)
+}
+
+/**
+ * `use(promise)`, recording the import it needs. `use()` suspends until the
+ * promise settles and then renders again, reading the promise anew: one made
+ * during render is a new promise every time and never settles in time, so
+ * anything but a reference to an existing one is reported.
+ */
+function renderUseCall(ctx: ConvertContext, node: ts.AwaitExpression, visit: (node: ts.Node) => ts.Node): ts.Node {
+  if (ctx.useName === null) {
+    // A file that already imported React's `use` has it rewritten onto Octane's.
+    const imported = [...(ctx.octaneImports.get('octane')?.keys() ?? [])].find(
+      (text) => text === 'use' || text.startsWith('use as ')
+    )
+    if (imported !== undefined) {
+      ctx.useName = imported === 'use' ? 'use' : imported.slice('use as '.length)
+    } else {
+      ctx.useName = uniqueName(ctx, 'use')
+      addOctaneImport(ctx, 'octane', ctx.useName === 'use' ? 'use' : `use as ${ctx.useName}`)
+    }
+  }
+  if (!isStableReference(node.expression)) {
+    report(
+      ctx,
+      node,
+      'uncached-use-promise',
+      'an await in an async component became use() on a promise created during render; create it outside the component so it is the same promise on every render'
+    )
+  }
+  const operand = visit(node.expression) as ts.Expression
+  return ts.factory.createCallExpression(ts.factory.createIdentifier(ctx.useName), undefined, [operand])
+}
+
+/** `highlighter`, `props.data`, `cache[key]`: a read of a promise, not the making of one. */
+function isStableReference(expr: ts.Expression): boolean {
+  const inner = unwrapParens(expr)
+  if (ts.isIdentifier(inner) || inner.kind === ts.SyntaxKind.ThisKeyword) return true
+  if (ts.isPropertyAccessExpression(inner)) return isStableReference(inner.expression)
+  if (ts.isElementAccessExpression(inner)) return isStableReference(inner.expression)
+  if (ts.isNonNullExpression(inner) || ts.isAsExpression(inner)) return isStableReference(inner.expression)
+  return false
 }
 
 /**

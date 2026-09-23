@@ -4,7 +4,8 @@ import ts from 'typescript'
 import { isHtmlTagName, isJsxLike, isNullish, unwrapParens } from './ast'
 import { emitBoundaryBlock, emitIteration, emitStyleBlock, emitSwitchBlock, isIterationCall } from './blocks'
 import type { ConvertContext } from './context'
-import { emitHelperCall, getHelperCall, liftRenderProp } from './lift'
+import { report } from './diagnostics'
+import { emitHelperCall, getHelperCall, liftElementAttribute, liftRenderProp } from './lift'
 import { renderExpr, renderTagName } from './print'
 import { INDENT, continuationLines, decodeEntities, indentLines, normalizeJsxText, toDoubleQuotedString } from './text'
 
@@ -61,7 +62,8 @@ function collectAttrs(
   ctx: ConvertContext,
   attrs: ts.JsxAttributes,
   isHtml: boolean,
-  omit?: ReadonlySet<string>
+  omit?: ReadonlySet<string>,
+  tagName?: string
 ): AttrInfo {
   const rest: string[] = []
   let className: AttrInfo['className'] = null
@@ -70,6 +72,7 @@ function collectAttrs(
   // a `className`/`id` that the source wrote *after* a spread would silently
   // flip which one wins. Once a spread is seen, keep them as plain attributes.
   let seenSpread = false
+  const changeName = nativeChangeName(ctx, attrs, tagName)
 
   for (const attr of attrs.properties) {
     if (ts.isJsxSpreadAttribute(attr)) {
@@ -81,7 +84,7 @@ function collectAttrs(
     const attrName = attr.name.getText(ctx.sourceFile)
     // `key` is hoisted onto the enclosing `each` line, so drop it here.
     if (omit && omit.has(attrName)) continue
-    const rendered = renderAttrValue(ctx, attr)
+    const rendered = renderAttrValue(ctx, attr, attrName === 'onChange' ? changeName : attrName)
 
     if (!seenSpread && isHtml && attrName === 'id' && attr.initializer && ts.isStringLiteral(attr.initializer)) {
       if (isSelectorSafe(attr.initializer.text)) {
@@ -110,13 +113,47 @@ function collectAttrs(
   return { className, id, rest }
 }
 
-function renderAttrValue(ctx: ConvertContext, attr: ts.JsxAttribute): string {
-  const name = attr.name.getText(ctx.sourceFile)
+/** Preserve React's per-edit text updates using Octane's native input event. */
+function nativeChangeName(ctx: ConvertContext, attrs: ts.JsxAttributes, tag?: string): string {
+  if (tag !== 'input' && tag !== 'textarea') return 'onChange'
+  const named = attrs.properties.filter(ts.isJsxAttribute)
+  const change = named.find((attr) => attr.name.getText(ctx.sourceFile) === 'onChange')
+  if (!change || named.some((attr) => attr.name.getText(ctx.sourceFile) === 'suppressNativeChangeWarning')) return 'onChange'
+
+  const type = named.find((attr) => attr.name.getText(ctx.sourceFile) === 'type')?.initializer
+  const value = type && ts.isJsxExpression(type) && type.expression ? unwrapParens(type.expression) : type
+  const inputType = value && ts.isStringLiteral(value) ? value.text.toLowerCase() : undefined
+  if (tag === 'input' && inputType !== undefined && NON_TEXT_INPUT_TYPES.has(inputType)) return 'onChange'
+
+  // A spread or dynamic type can change the final host props. An existing
+  // onInput must also keep its handler; neither can be safely overwritten.
+  if (
+    attrs.properties.some(ts.isJsxSpreadAttribute) ||
+    (tag === 'input' && type !== undefined && inputType === undefined) ||
+    named.some((attr) => attr.name.getText(ctx.sourceFile) === 'onInput')
+  ) {
+    report(
+      ctx, change, 'native-change-handler',
+      'onChange was preserved because the final input type or handlers are ambiguous; use onInput for per-edit text updates in Octane'
+    )
+    return 'onChange'
+  }
+  return 'onInput'
+}
+
+const NON_TEXT_INPUT_TYPES = new Set([
+  'button', 'checkbox', 'color', 'date', 'datetime-local', 'file', 'hidden',
+  'image', 'month', 'radio', 'range', 'reset', 'submit', 'time', 'week'
+])
+
+function renderAttrValue(ctx: ConvertContext, attr: ts.JsxAttribute, name: string): string {
   if (!attr.initializer) return name // boolean attribute shorthand
   if (ts.isStringLiteral(attr.initializer)) {
     return `${name}=${toDoubleQuotedString(attr.initializer.getText(ctx.sourceFile))}`
   }
   if (ts.isJsxExpression(attr.initializer) && attr.initializer.expression) {
+    const value = unwrapParens(attr.initializer.expression)
+    if (isJsxLike(value)) return liftElementAttribute(ctx, name, value)
     return `${name}={${renderExpr(ctx, attr.initializer.expression)}}`
   }
   return name
@@ -219,7 +256,7 @@ function emitSelfClosing(
 ): string[] {
   const name = renderTagName(ctx, node.tagName)
   const isHtml = isHtmlTagName(name)
-  const attrs = collectAttrs(ctx, node.attributes, isHtml, omit)
+  const attrs = collectAttrs(ctx, node.attributes, isHtml, omit, name)
   return buildTagLines(name, isHtml, attrs, indent)
 }
 
@@ -240,7 +277,7 @@ function emitJsxElement(
   if (boundary !== null) return boundary
 
   const isHtml = isHtmlTagName(name)
-  const attrs = collectAttrs(ctx, node.openingElement.attributes, isHtml, omit)
+  const attrs = collectAttrs(ctx, node.openingElement.attributes, isHtml, omit, name)
 
   const meaningful = meaningfulChildren(node.children)
 

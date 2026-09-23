@@ -52,13 +52,12 @@ export function renderImportDeclaration(ctx: ConvertContext, node: ts.ImportDecl
 
   // `import "./side-effect.css"` has no clause and carries no types to strip.
   if (!clause) return [`import ${quote(moduleTarget)};`]
-  // Type-only imports carry nothing at runtime and are dropped, except React's,
-  // which name types the converted file still annotates with.
+  // Types still appear in props and setup. Preserve them even though they do
+  // not contribute runtime code, including Octane's native signal types.
   const isTypeOnlyClause = clause.phaseModifier === ts.SyntaxKind.TypeKeyword
-  if (isTypeOnlyClause && !isReact) return []
   // `import defer` is the other phase a clause can carry. It changes when the
   // module is evaluated, so it has to survive the rewrite.
-  const phase = clause.phaseModifier === ts.SyntaxKind.DeferKeyword ? 'defer ' : ''
+  const phase = isTypeOnlyClause ? 'type ' : clause.phaseModifier === ts.SyntaxKind.DeferKeyword ? 'defer ' : ''
 
   // A default or namespace import binds the module object itself, so it can
   // only follow a whole-module rewrite, never a per-symbol one.
@@ -89,8 +88,8 @@ export function renderImportDeclaration(ctx: ConvertContext, node: ts.ImportDecl
     const isType = isTypeOnlyClause || el.isTypeOnly
 
     if (!isReact) {
-      if (isType) continue
-      addToGroup(groups, moduleTarget, alias ? `${local} as ${alias}` : local)
+      const prefix = el.isTypeOnly && !isTypeOnlyClause ? 'type ' : ''
+      addToGroup(groups, moduleTarget, prefix + (alias ? `${local} as ${alias}` : local))
       continue
     }
 

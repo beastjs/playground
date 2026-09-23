@@ -5,10 +5,6 @@ import { highlight } from '@/lib/shiki'
 import { SAMPLES } from '@/samples'
 import { measure, formatCount, formatReduction, type Metrics } from '@/lib/metrics'
 import { compileToTsrx, type TsrxResult } from '@/lib/tsrx'
-import Avatar from '@/components/ui/avatar.btsx'
-import Button from "./components/ui/button.btsx";
-import Drawer from "./components/ui/drawer.btsx";
-import FluidTooltipGroup from "./components/ui/fluid-tooltip.btsx";
 import Header from "./components/header.btsx";
 
 module
@@ -124,7 +120,7 @@ setup
   const [tsrxHtml, setTsrxHtml] = useState<{ __html: string }>({ __html: '' });
   const [isDesktop, setIsDesktop] = useState<boolean>(true);
   const [slide, setSlide] = useState<number>(0);
-  const carouselRef = useRef<HTMLDivElement>(null);
+  const carouselRef = useRef<HTMLDivElement|null>(null);
   // The whole pipeline is a function of the source alone. Everything else this
   // component tracks — copy feedback, the carousel slide, each highlighter
   // result landing — re-renders it, and recompiling on each of those runs

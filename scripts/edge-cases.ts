@@ -305,7 +305,7 @@ export default function A({ kids }: ProviderProps) { return <div>{kids}</div> }`
 
   // The file's component is the file's template, so Beast compiles it straight
   // to the default export instead of a wrapper rendering a renamed component.
-  // Signal hooks also need Octane's `nativeReads`, which the check turns on.
+  // Octane detects signal reads from imports, without compiler options.
   'signals default export': `import { createScope } from 'octane/signals'
 import { useSignal$ } from 'octane/signals/client'
 // Shared state lives outside the component.

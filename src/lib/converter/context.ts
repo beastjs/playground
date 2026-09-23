@@ -41,6 +41,13 @@ export interface ConvertContext {
    * of the same name must not mount another component's helper.
    */
   helpers: Map<string, LiftedHelper>
+  /**
+   * The `async` components being converted. Octane has no async components, so
+   * an `await` directly in one of their bodies is read with `use()` instead.
+   */
+  asyncComponents: Set<ts.Node>
+  /** The local name Octane's `use` is imported under, once an `await` needs it. */
+  useName: string | null
   /** Warnings about anything the output could not carry over faithfully. */
   diagnostics: ConversionDiagnostic[]
 }

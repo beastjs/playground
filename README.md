@@ -36,12 +36,10 @@ scope
   p #{label}
 ```
 
-Octane's experimental native-read signal mode remains opt-in. Enable it for
-both generated BTSX and native TSRX through the Vite adapter:
-
-```ts
-beastOctane({ octane: { nativeReads: true } })
-```
+The converter targets `beast-tsrx@0.2.62` with its tested
+`octane@0.2.13` and `@octanejs/rspack-plugin@0.1.50` pairing.
+Octane detects signals from `octane/signals` imports automatically; the removed
+`nativeReads` option is unnecessary for both BTSX and native TSRX.
 
 Record application changes in [CHANGELOG.md](CHANGELOG.md).
 

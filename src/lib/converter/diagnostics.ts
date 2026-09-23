@@ -39,6 +39,10 @@ export type ConversionDiagnosticCode =
   | 'dropped-overload'
   /** A generated or unwrapped component's props could not be typed. */
   | 'untyped-props'
+  /** An `await` in an async component became `use()` on a promise created during render. */
+  | 'uncached-use-promise'
+  /** A text-host onChange could not safely be rewritten onto native onInput. */
+  | 'native-change-handler'
 
 export interface ConversionDiagnostic {
   code: ConversionDiagnosticCode

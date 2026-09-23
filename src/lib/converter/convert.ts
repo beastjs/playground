@@ -51,6 +51,8 @@ export function convertTsx(source: string): ConversionResult {
     lifted: [],
     unwrappedReact: collectUnwrappedReact(sourceFile),
     helpers: new Map(),
+    asyncComponents: new Set(),
+    useName: null,
     diagnostics: []
   }
   const code = convertStatements(ctx)

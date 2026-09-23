@@ -121,7 +121,10 @@ function parameterNames(parameters: readonly ts.ParameterDeclaration[]): Set<str
  * own imports, a property name after a `.` is not a reference at all, and a
  * JSX attribute name is markup rather than a read.
  */
-export function collectFreeNames(ctx: ConvertContext, fn: ts.ArrowFunction | ts.FunctionExpression): string[] {
+export function collectFreeNames(
+  ctx: ConvertContext,
+  fn: ts.ArrowFunction | ts.FunctionExpression | ts.Expression
+): string[] {
   const free: string[] = []
   const seen = new Set<string>()
 
@@ -220,6 +223,11 @@ export function collectFreeNames(ctx: ConvertContext, fn: ts.ArrowFunction | ts.
     node.forEachChild((child) => walk(child, bound))
   }
 
+  // An element written straight into an attribute has no parameters of its own.
+  if (!ts.isArrowFunction(fn) && !ts.isFunctionExpression(fn)) {
+    walk(fn, new Set())
+    return free
+  }
   const bound = new Set(parameterNames(fn.parameters))
   for (const parameter of fn.parameters) {
     if (parameter.initializer) walk(parameter.initializer, new Set())

@@ -227,6 +227,7 @@ export function renderComponentParts(
   if (fn.body === undefined) return { declarations: [], notes: [], body: [] }
 
   const rootParam = forwarded ? null : getRootPropsParam(fn)
+  if (fn.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword)) ctx.asyncComponents.add(fn)
 
   const body: string[] = []
   const notes: string[] = []
