@@ -1,0 +1,125 @@
+import { useState, useRef } from 'octane'
+import SourcePanel from './source-panel.btsx'
+import OutputPanel from './output-panel.btsx'
+import type { WorkspacePanels } from './types'
+
+module
+  const SLIDES = [
+    { label: 'Show TSX' },
+    { label: 'Show BTSX' },
+    { label: 'Show TSRX' }
+  ]
+  const DRAG_THRESHOLD = 6
+
+props { panels }: { panels: WorkspacePanels }
+setup
+  const [slide, setSlide] = useState<number>(0);
+  const carouselRef = useRef<HTMLDivElement|null>(null);
+  const trackSlide = (event: Event) => {
+    const track = event.currentTarget as HTMLElement;
+    if (track.clientWidth === 0) return;
+    setSlide(Math.round(track.scrollLeft / track.clientWidth));
+  };
+  const showSlide = (index: number) => {
+    const track = carouselRef.current;
+    if (track === null) return;
+    track.scrollTo({ left: index * track.clientWidth, behavior: 'smooth' });
+  };
+
+setup
+  // Touch and trackpads page the carousel natively; a mouse cannot drag a
+  // horizontal scroller, so pointer events stand in for the missing gesture.
+  // Mouse only — hijacking touch here would replace the browser's own axis
+  // detection and break vertical scrolling inside a panel.
+  const drag = useRef<{ pending: boolean; active: boolean; x: number; y: number; left: number }>({
+    pending: false,
+    active: false,
+    x: 0,
+    y: 0,
+    left: 0
+  });
+  const beginDrag = (event: PointerEvent) => {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return;
+    // Let the caret, buttons and links keep their own press behaviour.
+    const target = event.target as HTMLElement | null;
+    if (target !== null && target.closest('textarea, button, input, select, a') !== null) return;
+    const track = event.currentTarget as HTMLElement;
+    drag.current = { pending: true, active: false, x: event.clientX, y: event.clientY, left: track.scrollLeft };
+  };
+  const moveDrag = (event: PointerEvent) => {
+    const state = drag.current;
+    if (!state.pending) return;
+    const track = event.currentTarget as HTMLElement;
+    const dx = event.clientX - state.x;
+    if (!state.active) {
+      // Wait for a clearly horizontal intent so a click or a text selection is
+      // still possible inside the panel.
+      if (Math.abs(dx) < DRAG_THRESHOLD || Math.abs(dx) <= Math.abs(event.clientY - state.y)) return;
+      state.active = true;
+      // Capture keeps the drag alive past the element's edge, but throws if the
+      // pointer is already gone; the drag still works without it.
+      try {
+        track.setPointerCapture(event.pointerId);
+      } catch {
+        // ignore
+      }
+      track.dataset.dragging = 'true';
+      track.style.scrollSnapType = 'none';
+      track.style.scrollBehavior = 'auto';
+    }
+    event.preventDefault();
+    track.scrollLeft = state.left - dx;
+  };
+  const endDrag = (event: PointerEvent) => {
+    const state = drag.current;
+    const track = event.currentTarget as HTMLElement;
+    drag.current = { pending: false, active: false, x: 0, y: 0, left: 0 };
+    if (!state.active) return;
+    try {
+      if (track.hasPointerCapture(event.pointerId)) track.releasePointerCapture(event.pointerId);
+    } catch {
+      // ignore
+    }
+    delete track.dataset.dragging;
+    track.style.scrollSnapType = '';
+    track.style.scrollBehavior = '';
+    const width = track.clientWidth;
+    if (width === 0) return;
+    // A short flick still turns the page; anything less settles back.
+    const moved = track.scrollLeft - state.left;
+    const from = Math.round(state.left / width);
+    const to = Math.abs(moved) > width * 0.2 ? (moved > 0 ? from + 1 : from - 1) : from;
+    showSlide(Math.max(0, Math.min(SLIDES.length - 1, to)));
+  };
+
+div(className='flex h-full flex-col gap-2')
+  div(
+    ~ ref={carouselRef}
+    ~ onScroll={trackSlide}
+    ~ onPointerDown={beginDrag}
+    ~ onPointerMove={moveDrag}
+    ~ onPointerUp={endDrag}
+    ~ onPointerCancel={endDrag}
+    ~ className='panel-carousel min-h-0 flex-1'
+    ~ )
+    div(className='panel-slide')
+      SourcePanel({...panels.source})
+    div(className='panel-slide overflow-hidden')
+      OutputPanel(
+        ~ {...panels.btsx}
+        ~ className='bg-[radial-gradient(circle_at_88%_10%,rgba(255,255,255,0.07),transparent_28rem),linear-gradient(145deg,#2a2b29,#111211_72%)]'
+        ~ )
+    div(className='panel-slide overflow-hidden')
+      OutputPanel(
+        ~ {...panels.tsrx}
+        ~ className='bg-[radial-gradient(circle_at_88%_10%,rgba(255,255,255,0.07),transparent_28rem),linear-gradient(105deg,#111211,#ff415a_92%)]'
+        ~ )
+  nav(className='flex shrink-0 items-center justify-center gap-2 py-1' aria-label="Panel")
+    each entry, index in SLIDES key entry.label
+      button(
+        ~ type="button"
+        ~ aria-label={entry.label}
+        ~ aria-current={slide === index}
+        ~ onClick={() => showSlide(index)}
+        ~ className={slide === index ? 'h-2 w-6 cursor-pointer rounded-full border-0 bg-[#2a2b29] transition-all' : 'h-2 w-2 cursor-pointer rounded-full border-0 bg-black/20 transition-all'}
+        ~ )

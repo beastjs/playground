@@ -86,6 +86,7 @@ function needsRewrite(ctx: ConvertContext, node: ts.Node): boolean {
   if (ts.isIdentifier(node)) {
     return node.text === 'React' || ctx.renames.has(node.text) || ctx.reactTypes.has(node.text)
   }
+  if (isContextProvider(ctx, node)) return true
   return ts.forEachChild(node, (child) => (needsRewrite(ctx, child) ? true : undefined)) === true
 }
 
@@ -117,6 +118,9 @@ function rewriteNode(ctx: ConvertContext, node: ts.Node, visit: (node: ts.Node) 
     }
   }
 
+  // `Theme.Provider` is `Theme`: an Octane context is its own provider.
+  if (isContextProvider(ctx, node)) return visit(node.expression)
+
   if (ts.isPropertyAccessExpression(node) || ts.isQualifiedName(node)) {
     const left = ts.isPropertyAccessExpression(node) ? node.expression : node.left
     const right = ts.isPropertyAccessExpression(node) ? node.name : node.right
@@ -139,6 +143,19 @@ function rewriteNode(ctx: ConvertContext, node: ts.Node, visit: (node: ts.Node) 
     }
   }
   return undefined
+}
+
+/** `Theme.Provider`, where `Theme` is a context the file creates. */
+function isContextProvider(
+  ctx: ConvertContext,
+  node: ts.Node
+): node is ts.PropertyAccessExpression & { expression: ts.Identifier } {
+  return (
+    ts.isPropertyAccessExpression(node) &&
+    node.name.text === 'Provider' &&
+    ts.isIdentifier(node.expression) &&
+    ctx.contexts.has(node.expression.text)
+  )
 }
 
 /**

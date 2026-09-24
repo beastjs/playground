@@ -1,0 +1,65 @@
+import { useState, useEffect } from 'octane'
+import { highlight } from '@/lib/shiki'
+import { cn } from '@/lib/utils'
+import { Icon } from '@/lib/icons'
+import Stats from './stats.btsx'
+import type { SourcePanelProps } from './types'
+
+props { source, metrics, copied, pasteBlocked, onCopy, onPaste, onEdit }: SourcePanelProps
+setup
+  const [html, setHtml] = useState<{ __html: string }>({ __html: '' });
+  // The textarea is transparent over a highlighted copy of the same text, so
+  // the copy has to follow the textarea's scroll to stay lined up.
+  const syncScroll = (event: Event) => {
+    const area = event.currentTarget as HTMLTextAreaElement;
+    const layer = area.previousElementSibling as HTMLElement | null;
+    if (layer === null) return;
+    layer.scrollTop = area.scrollTop;
+    layer.scrollLeft = area.scrollLeft;
+  };
+
+setup
+  useEffect(() => {
+    let alive = true;
+    highlight(source, 'tsx', 'github-light').then((next) => { if (alive) setHtml({ __html: next }); });
+    return () => { alive = false; };
+  }, [source]);
+
+article(className='flex h-full min-h-0 flex-col rounded-[1.15rem] p-4 sm:rounded-[1.45rem] sm:p-4')
+  div(className='flex items-start justify-between gap-4')
+    div(className='min-w-0')
+      p(className='text-[0.72rem] font-bold uppercase tracking-[0.11em] text-[#9b9b96]') react
+      div(className='flex flex-wrap items-baseline gap-x-3 gap-y-1')
+        h2(className='text-[clamp(1.2rem,2.8vw,1.5rem)] font-medium leading-[1.16] tracking-[-0.035em] text-[#161616]') TSX
+        Stats(metrics={metrics} reduction={null} tone='text-[#9b9b96]')
+    div(className='flex shrink-0 items-center gap-2')
+      button(
+        ~ type="button"
+        ~ onClick={onPaste}
+        ~ aria-label={pasteBlocked ? 'Clipboard access blocked' : 'Paste from clipboard'}
+        ~ title={pasteBlocked ? 'Clipboard access blocked' : 'Paste from clipboard'}
+        ~ className={cn('grid size-7 shrink-0 cursor-pointer place-items-center rounded-full border border-black/10 bg-white/70 text-[#595956] transition hover:text-[#111] focus-visible:ring-3 focus-visible:ring-orange-200', { 'text-amber-600 hover:text-amber-700': pasteBlocked })}
+        ~ )
+        Icon(name={pasteBlocked ? 'circle-alert' : 'paste'} className='size-4')
+      button(
+        ~ type="button"
+        ~ onClick={onCopy}
+        ~ aria-label={copied ? 'Copied' : 'Copy source'}
+        ~ title={copied ? 'Copied' : 'Copy source'}
+        ~ className='grid size-7 shrink-0 cursor-pointer place-items-center rounded-full border border-black/10 bg-white/70 text-[#595956] transition hover:text-[#111] focus-visible:ring-3 focus-visible:ring-orange-200'
+        ~ )
+        Icon(name={copied ? 'copied' : 'copy'} className='size-4')
+  div(className='code-surface relative mt-6 min-h-0 flex-1 overflow-hidden rounded-xl border border-black/8 bg-white/60 focus-within:ring-3 focus-within:ring-orange-200')
+    div(
+      ~ aria-hidden="true"
+      ~ className='pointer-events-none absolute inset-0 overflow-hidden bg-white'
+      ~ dangerouslySetInnerHTML={html}
+      ~ )
+    textarea(
+      ~ aria-label="TSX source"
+      ~ spellcheck={false}
+      ~ value={source}
+      ~ onInput={onEdit}
+      ~ onScroll={syncScroll}
+      ~ className='absolute inset-0 h-full w-full resize-none overflow-auto bg-transparent text-transparent caret-[#161616] outline-none'
+      ~ )

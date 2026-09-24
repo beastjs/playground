@@ -4,9 +4,24 @@
     {
       "name": "dev",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 8081,
       "url": "http://localhost:8081"
+    },
+    {
+      "name": "dev-8082",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--port",
+        "8082"
+      ],
+      "port": 8082,
+      "url": "http://localhost:8082"
     }
   ]
 }

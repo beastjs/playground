@@ -15,7 +15,7 @@ import {
 import type { ConvertContext } from './context'
 import { renderModuleMember } from './declarations'
 import { assertParsed, report, type ConversionDiagnostic } from './diagnostics'
-import { collectUnwrappedReact, renderImportDeclaration } from './imports'
+import { collectContexts, collectUnwrappedReact, renderImportDeclaration } from './imports'
 import { requoteSource } from './print'
 import { collectModuleScope } from './scope'
 import { ensureSemicolon, indentLines } from './text'
@@ -50,6 +50,7 @@ export function convertTsx(source: string): ConversionResult {
     renames: new Map(),
     lifted: [],
     unwrappedReact: collectUnwrappedReact(sourceFile),
+    contexts: collectContexts(sourceFile),
     helpers: new Map(),
     asyncComponents: new Set(),
     useName: null,

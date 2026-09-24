@@ -28,6 +28,55 @@ export function collectUnwrappedReact(sourceFile: ts.SourceFile): Set<string> {
 }
 
 /**
+ * The module-scope names bound to `createContext(...)` from React (or Octane).
+ * An Octane context is itself the provider component, with no `.Provider`
+ * member, so `<Theme.Provider value>` has to become `<Theme value>` — but only
+ * for a context: `Tooltip.Provider` from a UI library is a component of its own.
+ */
+export function collectContexts(sourceFile: ts.SourceFile): Set<string> {
+  // The local names `createContext` is imported under, and the names the
+  // module itself goes by (`React.createContext`, `R.createContext`).
+  const factories = new Set<string>()
+  const namespaces = new Set(['React'])
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !statement.importClause) continue
+    const specifier = stripQuotes(statement.moduleSpecifier.getText(sourceFile))
+    if (!isReactModule(specifier) && specifier !== 'octane') continue
+    const clause = statement.importClause
+    if (clause.name) namespaces.add(clause.name.text)
+    const bindings = clause.namedBindings
+    if (!bindings) continue
+    if (ts.isNamespaceImport(bindings)) {
+      namespaces.add(bindings.name.text)
+      continue
+    }
+    for (const element of bindings.elements) {
+      if ((element.propertyName ?? element.name).text === 'createContext') factories.add(element.name.text)
+    }
+  }
+
+  const isFactory = (callee: ts.Expression): boolean =>
+    ts.isIdentifier(callee)
+      ? factories.has(callee.text)
+      : ts.isPropertyAccessExpression(callee) &&
+        callee.name.text === 'createContext' &&
+        ts.isIdentifier(callee.expression) &&
+        namespaces.has(callee.expression.text)
+
+  const contexts = new Set<string>()
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      const init = declaration.initializer
+      if (ts.isIdentifier(declaration.name) && init && ts.isCallExpression(init) && isFactory(init.expression)) {
+        contexts.add(declaration.name.text)
+      }
+    }
+  }
+  return contexts
+}
+
+/**
  * Rewrites one import onto the Octane module that actually provides it.
  *
  * A package with an `@octanejs/*` port moves wholesale. React itself is

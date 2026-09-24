@@ -132,6 +132,24 @@ export default function A({ a }: { a: ReactNode }) { const label = "ReactNode"; 
     expect(result.code).toContain('import { useState } from "octane";')
     expect(result.diagnostics.map((d) => d.code)).toEqual(['unresolved-react-member'])
   })
+
+  test('a context is rendered as its own provider, and another .Provider is left alone', () => {
+    const result = convertTsx(`import * as React from 'react'
+import { createContext as cc } from 'react'
+import * as Tooltip from '@radix-ui/react-tooltip'
+const A = React.createContext(0)
+const B = cc('x')
+export default function X({ children }: { children: React.ReactNode }) {
+  const provided = <A.Provider value={2}>{children}</A.Provider>
+  return <Tooltip.Provider><A.Provider value={1}><B.Provider value='y'>{provided}</B.Provider></A.Provider></Tooltip.Provider>
+}`)
+    expect(result.diagnostics).toEqual([])
+    expect(result.code).not.toContain('A.Provider')
+    expect(result.code).not.toContain('B.Provider')
+    expect(result.code).toContain('Tooltip.Provider')
+    expect(result.code).toContain('A(value={1})')
+    expect(result.code).toContain('B(value="y")')
+  })
 })
 
 describe('async components', () => {

@@ -1,0 +1,22 @@
+import DropdownMenu, { DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu.btsx'
+import Button from '@/components/ui/button.btsx'
+import { Icon } from '@/lib/icons'
+import { SAMPLES } from '@/samples'
+
+props { sourceId, onSelect }: { sourceId: string; onSelect: (id: string) => void }
+setup
+  // Edited or pasted source matches no sample, and reads as "Custom".
+  const activeSample = SAMPLES.find((entry) => entry.id === sourceId);
+
+DropdownMenu
+  DropdownMenuTrigger(
+    ~ render={<Button/>}
+    ~ aria-label="Sample source"
+    ~ className='gap-2 rounded-full bg-white/95 px-4 py-2 text-sm font-semibold text-[#242422] shadow-[0_1px_4px_rgba(26,26,24,0.14)] hover:bg-white data-pressed:bg-white'
+    ~ )
+    span #{activeSample?.label ?? 'Custom'}
+    Icon(name='select-caret' className='size-3 opacity-70')
+  DropdownMenuContent(className='w-fit min-w-40 bg-background' align="end" sideOffset={6})
+    DropdownMenuRadioGroup(value={sourceId} onValueChange={(id: string) => onSelect(id)})
+      each sample in SAMPLES key sample.id
+        DropdownMenuRadioItem(value={sample.id} closeOnClick className='p-2 hover:bg-foreground/5') #{sample.label}

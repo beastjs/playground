@@ -40,9 +40,13 @@ body {
   background: radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.92), transparent 34rem), #ececeb;
 }
 
-button,
-a {
-  font: inherit;
+/* Layered so a button's own text-size and font-weight utilities still win;
+   unlayered, this beat every one of them. */
+@layer base {
+  button,
+  a {
+    font: inherit;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -116,6 +120,9 @@ a {
   flex: 0 0 100%;
   min-width: 0;
   scroll-snap-align: center;
+  /* One panel per swipe: a fast fling stops at the next panel instead of
+     skipping past it. */
+  scroll-snap-stop: always;
 }
 
 /* Mouse-drag paging affordance. Coarse pointers page natively and must not get

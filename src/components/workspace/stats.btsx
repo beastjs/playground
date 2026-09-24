@@ -1,0 +1,15 @@
+import { formatCount, type Metrics } from '@/lib/metrics'
+
+props { metrics, reduction, tone }: { metrics: Metrics; reduction: string | null; tone: string }
+div(className={`flex flex-wrap items-baseline gap-x-1.5 text-[0.7rem] font-semibold tabular-nums ${tone}`})
+  span #{formatCount(metrics.lines, 'line')}
+  span(aria-hidden="true") ·
+  span #{formatCount(metrics.tokens, 'token')}
+  span(aria-hidden="true") ·
+  span #{formatCount(metrics.chars, 'char')}
+  if reduction !== null
+    span(
+      ~ title="Characters saved against the TSX source"
+      ~ className='rounded-full bg-emerald-400/15 px-1.5 py-0.5 text-emerald-500'
+      ~ )
+      | #{reduction}

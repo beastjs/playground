@@ -35,6 +35,11 @@ export interface ConvertContext {
    */
   unwrappedReact: Set<string>
   /**
+   * Module-scope names bound to `createContext(...)`. Octane renders a context
+   * as its own provider, so every `Theme.Provider` is written as `Theme`.
+   */
+  contexts: Set<string>
+  /**
    * JSX-returning helpers in scope for the body being converted — `renderValue`
    * — that were lifted into `component` blocks, keyed by their local name.
    * Scoped to the body that declared them: a sibling component calling a prop

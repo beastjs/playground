@@ -1,4 +1,4 @@
-import { cva } from "class-variance-authority";
+import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "@octanejs/radix";
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "octane";
@@ -32,7 +32,7 @@ module
 
   export { buttonVariants };
 props { className, variant = "default", size = "default", asChild = false, ...props }: ComponentProps<"button"> & VariantProps<typeof buttonVariants> & { asChild?: boolean}
-setup const Comp = asChild ? Slot.Root : "button";
+setup const Comp = asChild ? Slot : "button";
 Comp(
   ~ data-slot="button"
   ~ data-variant={variant}

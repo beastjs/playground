@@ -1,0 +1,43 @@
+import { Group, Panel, Separator } from '@octanejs/resizable-panels'
+import SourcePanel from './source-panel.btsx'
+import OutputPanel from './output-panel.btsx'
+import type { PanelId, PanelVisibility, WorkspacePanels } from './types'
+
+module
+  const ORDER: PanelId[] = ['tsx', 'btsx', 'tsrx']
+
+props { panels, visible }: { panels: WorkspacePanels; visible: PanelVisibility }
+setup
+  // The shown panels split the width evenly. The group is keyed on which panels
+  // are shown, so it starts over with this layout whenever one is toggled
+  // rather than trying to carry the old sizes across a different set.
+  const shown = ORDER.filter((id) => visible[id]);
+  const layout = Object.fromEntries(shown.map((id) => [id, 100 / shown.length]));
+
+Group(
+  ~ key={shown.join('-')}
+  ~ className='h-full w-full'
+  ~ orientation="horizontal"
+  ~ defaultLayout={layout}
+  ~ )
+  if visible.tsx
+    Panel(id="tsx" minSize="22%")
+      SourcePanel({...panels.source})
+  if visible.btsx
+    fragment
+      if visible.tsx
+        Separator(className='panel-separator' aria-label="Resize panels")
+      Panel(id="btsx" minSize="22%" className='overflow-hidden')
+        OutputPanel(
+          ~ {...panels.btsx}
+          ~ className='bg-[radial-gradient(circle_at_88%_10%,rgba(255,255,255,0.07),transparent_28rem),linear-gradient(145deg,#2a2b29,#111211_72%)]'
+          ~ )
+  if visible.tsrx
+    fragment
+      if visible.tsx || visible.btsx
+        Separator(className='panel-separator' aria-label="Resize panels")
+      Panel(id="tsrx" minSize="22%" className='overflow-hidden')
+        OutputPanel(
+          ~ {...panels.tsrx}
+          ~ className='bg-[radial-gradient(circle_at_88%_10%,rgba(255,255,255,0.07),transparent_28rem),linear-gradient(105deg,#111211,#ff415a_92%)]'
+          ~ )

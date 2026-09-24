@@ -200,12 +200,6 @@ export const icons = {
     viewBox: '0 0 16 16',
     set: 'svg'
   },
-  cols: {
-    symbol:
-      '<g transform="scale(0.667)"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 4v16m6-16v16M5 20h14a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1"/></g>',
-    viewBox: '0 0 16 16',
-    set: 'svg'
-  },
   globe: {
     symbol:
       '<path d="M1.716 10.228a6.672 6.672 0 0 0 12.577 0 11.94 11.94 0 0 1-6.289 1.778c-2.306 0-4.46-.651-6.288-1.778m.204-4.955a6.64 6.64 0 0 0-.577 3.064 10.63 10.63 0 0 0 6.661 2.335c2.52 0 4.836-.874 6.662-2.335q.008-.166.008-.333a6.7 6.7 0 0 0-.585-2.73 9.96 9.96 0 0 1-6.085 2.063A9.96 9.96 0 0 1 1.92 5.273m6.084-3.939a6.66 6.66 0 0 0-5.41 2.77 8.63 8.63 0 0 0 5.41 1.899 8.63 8.63 0 0 0 5.41-1.898 6.66 6.66 0 0 0-5.41-2.771" fill="currentColor"/>',
@@ -391,6 +385,24 @@ export const icons = {
       '<g transform="scale(0.667)"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m7 15 5 5 5-5M7 9l5-5 5 5"/></g>',
     viewBox: '0 0 16 16',
     set: 'lucide'
+  },
+  copy: {
+    symbol:
+      '<g transform="scale(0.667)"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M7 9.667A2.667 2.667 0 0 1 9.667 7h8.666A2.667 2.667 0 0 1 21 9.667v8.666A2.667 2.667 0 0 1 18.333 21H9.667A2.667 2.667 0 0 1 7 18.333z"/><path d="M4.012 16.737A2 2 0 0 1 3 15V5c0-1.1.9-2 2-2h10c.75 0 1.158.385 1.5 1"/></g></g>',
+    viewBox: '0 0 16 16',
+    set: 'svg'
+  },
+  copied: {
+    symbol:
+      '<g transform="scale(0.667)"><path d="M18.333 6A3.667 3.667 0 0 1 22 9.667v8.666A3.667 3.667 0 0 1 18.333 22H9.667A3.667 3.667 0 0 1 6 18.333V9.667A3.667 3.667 0 0 1 9.667 6zM15 2c1.094 0 1.828.533 2.374 1.514a1 1 0 1 1-1.748.972C15.405 4.088 15.284 4 15 4H5c-.548 0-1 .452-1 1v9.998c0 .32.154.618.407.805l.1.065a1 1 0 1 1-.99 1.738A3 3 0 0 1 2 15V5c0-1.652 1.348-3 3-3zm1.293 9.293L13 14.585l-1.293-1.292a1 1 0 0 0-1.414 1.414l2 2a1 1 0 0 0 1.414 0l4-4a1 1 0 0 0-1.414-1.414"/></g>',
+    viewBox: '0 0 16 16',
+    set: 'svg'
+  },
+  paste: {
+    symbol:
+      '<g transform="scale(0.667)"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><path d="M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2"/></g></g>',
+    viewBox: '0 0 16 16',
+    set: 'svg'
   }
 }
 

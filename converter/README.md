@@ -208,8 +208,11 @@ Written in strict TypeScript — no `any`.
 
 **JSX → pug-like syntax**
 - Self-closing / element tags: a lowercase, dot-free tag name (`div`, `p`,
-  `span`, ...) is treated as an HTML tag; anything else (`Foo`, `Theme.Provider`)
+  `span`, ...) is treated as an HTML tag; anything else (`Foo`, `Tooltip.Provider`)
   is treated as a component reference.
+- An Octane context is its own provider, so `<Theme.Provider value={v}>` becomes
+  `Theme(value={v})` when `Theme` is a module-scope `createContext(...)` from
+  React. Any other `.Provider` (a UI library's `Tooltip.Provider`) is kept.
 - `className="single-class"` on an HTML tag becomes shorthand: `tag.single-class`
   (and `div.single-class` collapses further to `.single-class`, since `div` is
   the implicit default tag), but only when the value matches

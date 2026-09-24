@@ -16,6 +16,10 @@ All notable changes to `beast-converter` will be recorded here.
   compiles; these catch output that compiles and says the wrong thing.
 
 ### Changed
+- Converter: a context's `<Theme.Provider value>` is written as `Theme(value)`,
+  since an Octane context is its own provider. Only names bound to
+  `createContext(...)` in the file are rewritten; `Tooltip.Provider` and other
+  library components keep their `.Provider`.
 - Align the converter toolchain with Beast 0.2.62, Octane 0.2.13, and the
   Octane Rspack plugin 0.1.50. Signal imports enable native reads automatically;
   conversion validation no longer passes the removed `nativeReads` option.

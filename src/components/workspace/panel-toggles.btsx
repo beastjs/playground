@@ -1,0 +1,30 @@
+import { ButtonGroup } from '@/components/ui/button-group.btsx'
+import Button from '@/components/ui/button.btsx'
+import { cn } from '@/lib/utils'
+import type { PanelId, PanelVisibility } from './types'
+
+module
+  // Each label takes its panel's colour while the panel is shown.
+  const PANELS: { id: PanelId; label: string; tone: string }[] = [
+    { id: 'tsx', label: 'TSX', tone: 'bg-[#57c4dc]' },
+    { id: 'btsx', label: 'BTSX', tone: 'text-white' },
+    { id: 'tsrx', label: 'TSRX', tone: 'text-white bg-[#ff415a]' }
+  ]
+
+props { visible, onToggle }: { visible: PanelVisibility; onToggle: (id: PanelId) => void }
+setup
+  // Hiding the last visible panel would leave the workspace empty, so its
+  // button stays pressed and disabled until another panel is shown.
+  const shownCount = PANELS.filter((panel) => visible[panel.id]).length;
+
+ButtonGroup(aria-label="Visible panels" className='gap-1 rounded-full bg-background px-1 py-2 shadow-[0_1px_4px_rgba(26,26,24,0.14)]')
+  each panel in PANELS key panel.id
+    Button(
+      ~ type="button"
+      ~ size="sm"
+      ~ aria-pressed={visible[panel.id]}
+      ~ disabled={visible[panel.id] && shownCount === 1}
+      ~ onClick={() => onToggle(panel.id)}
+      ~ className={cn('h-7 cursor-pointer rounded-full! border-0 px-3.5 mx-1 text-xs font-semibold transition focus-visible:ring-3 focus-visible:ring-orange-200 disabled:cursor-not-allowed disabled:opacity-100', visible[panel.id] ? cn('bg-[#2a2b29] hover:bg-[#2a2b29]/90', panel.tone) : 'bg-transparent text-[#9b9b96] hover:text-[#242422]')}
+      ~ )
+      | #{panel.label}

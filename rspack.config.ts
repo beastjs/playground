@@ -31,10 +31,29 @@ const config: Configuration = {
         // The file's own component here is the Group — the `props` block at
         // column zero. Naming it explicitly keeps it out of the way of the
         // `FluidTooltip` parts object the same file exports.
-        'src/components/ui/fluid-tooltip.btsx': { componentName: 'FluidTooltipGroup' }
+        'src/components/ui/fluid-tooltip.btsx': { componentName: 'FluidTooltipGroup' },
+        // The root here is the separator; named after the file it would
+        // replace the `ButtonGroup` component the file exports.
+        'src/components/ui/button-group.btsx': { componentName: 'ButtonGroupSeparator' }
       }
     })
   ],
+  // The converter runs the TypeScript compiler in the browser. `typescript.js`
+  // reads `__filename`/`__dirname` and loads plugins with a computed `require`,
+  // but only on its Node code paths, which never run here. Mocking the globals
+  // is what rspack already did by default; this just says so without the
+  // warning. The computed `require` can't be resolved and doesn't need to be.
+  node: { __filename: 'mock', __dirname: 'mock' },
+  ignoreWarnings: [
+    { module: /node_modules[\\/]typescript[\\/]lib[\\/]typescript\.js$/u, message: /Critical dependency/u }
+  ],
+  // The TypeScript compiler alone is several MiB and has to load up front, so
+  // the default 300/500 KiB budgets would always warn. These sit just above
+  // the current bundle, so real growth still gets flagged.
+  performance: {
+    maxAssetSize: 6 * 1024 * 1024,
+    maxEntrypointSize: 6 * 1024 * 1024
+  },
   devServer: { historyApiFallback: true },
   resolve: {
     extensions: ['.ts', '.tsx', '.js', '.btsx', '.mdx'],
