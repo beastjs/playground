@@ -17,7 +17,7 @@ setup
     return () => { alive = false; };
   }, [result.ok, result.output, lang]);
 
-article(className={cn('flex h-full min-h-0 flex-col rounded-[1.15rem] p-4 sm:p-5 text-[#f6f6f2] sm:rounded-[1.45rem] scrollbar-track-transparent scrollbar-thumb-[#1f1f1f] scrollbar-thin overflow-hidden', className)})
+article(className={cn('flex h-full min-h-0 flex-col rounded-[1.15rem] p-4 sm:p-5 text-[#f6f6f2] sm:rounded-[1.45rem] scrollbar-track-transparent scrollbar-thumb-[#1f1f1f] scrollbar-thin overflow-hidden md:min-h-[88vh]', className)})
   div(className='flex items-start justify-between')
     div(className='min-w-0')
       p(className='text-[0.72rem] font-bold uppercase tracking-[0.11em] text-[#858681]') #{eyebrow}

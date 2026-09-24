@@ -145,7 +145,7 @@ main(className='grid min-h-screen min-w-[96vw] place-items-center')
 
     section#workflow-panel(
       ~ aria-live="polite"
-      ~ className='h-[90vh] rounded-3xl bg-[#eeeeeb]/90 p-2 sm:rounded-[2rem]'
+      ~ className='flex-1 min-h-[90vh] h-full rounded-3xl bg-[#eeeeeb]/90 p-2 sm:rounded-[2rem]'
       ~ )
       if isDesktop
         DesktopLayout(panels={panels} visible={visible})
