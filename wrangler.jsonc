@@ -2,10 +2,29 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "beast-converter",
   "compatibility_date": "2026-09-24",
-  // Static-only deploy: rspack builds the SPA into `dist/` and Workers serves it
-  // as assets. Unknown paths fall back to index.html for client-side routing.
+  // The Worker answers `/api/*` (see worker/index.ts); rspack builds the SPA
+  // into `dist/` and everything else is served from there as assets. Unknown
+  // paths fall back to index.html for client-side routing.
+  "main": "worker/index.ts",
+  // The TypeScript and Octane compilers dominate the bundle; minifying keeps
+  // it well under the Workers size limit.
+  "minify": true,
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  // TypeScript treats any runtime with `process.nextTick` and `require` as Node
+  // unless `process.browser` is set, and Workers have both. Setting it keeps
+  // the compiler on the same non-Node path the browser bundle takes.
+  "define": { "process.browser": "true" },
+  // `beast-tsrx`'s entry also re-exports a file-system project builder whose
+  // `node:` imports the Worker never calls. The same shims the browser build
+  // uses stand in for them.
+  "alias": {
+    "node:path": "./src/lib/shims/node-path.ts",
+    "node:fs": "./src/lib/shims/node-fs.ts",
+    "node:fs/promises": "./src/lib/shims/node-fs.ts"
   }
 }

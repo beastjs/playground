@@ -22,6 +22,7 @@ runtime.
 - [Quick start](#quick-start)
 - [Scripts](#scripts)
 - [Using the converter as a library](#using-the-converter-as-a-library)
+- [HTTP API](#http-api)
 - [Example](#example)
 - [Project structure](#project-structure)
 - [Quality gates](#quality-gates)
@@ -80,6 +81,8 @@ bun run dev --port 8082
 | `bun test` | Behavioural tests for converter output and diagnostics. |
 | `bun run validate` | Push every sample and edge case through Beast's parser, Beast's codegen and Octane's compiler, and compare samples with their golden files. |
 | `bun run validate:types` | As above, and also typecheck the generated TSRX. |
+| `bun run cf:dev` | Build, then serve the site and the HTTP API with `wrangler dev`. |
+| `bun run deploy` | Build and deploy to Cloudflare Workers. |
 | `bun run check` | Typecheck, tests, validation and build. **Run before shipping.** |
 
 ## Using the converter as a library
@@ -108,6 +111,44 @@ Diagnostic codes form a closed union (`ConversionDiagnosticCode`), so callers
 can decide which ones to treat as errors. The full rule set, the diagnostic
 reference and known limitations are documented in
 [converter/README.md](converter/README.md).
+
+## HTTP API
+
+The deployed Worker exposes the same pipeline as the playground at
+`POST /api/converter`. Send TSX; get back BTSX, TSRX or both, each with the
+panels' metrics, plus whether Beast and Octane compiled the result.
+
+```bash
+curl -X POST https://<host>/api/converter \
+  -H 'Content-Type: application/json' \
+  -d '{ "code": "export default function A() { return <p>hi</p> }", "outputs": ["btsx", "tsrx"] }'
+```
+
+`outputs` is optional and defaults to both. The body can also be the raw TSX,
+with the selection on the query string: `POST /api/converter?outputs=btsx`.
+
+```jsonc
+{
+  "ok": true,                                   // Beast and Octane both compiled it
+  "input": { "metrics": { "chars": 48, "lines": 1, "tokens": 17 } },
+  "outputs": {
+    "btsx": { "code": "...", "metrics": { ... }, "diagnostics": [] },
+    "tsrx": { "code": "...", "metrics": { ... } } // null code/metrics if Beast failed
+  },
+  "compilation": {
+    "beast":  { "ok": true, "error": null },
+    "octane": { "ok": true, "error": null }
+  }
+}
+```
+
+TSRX is compiled from the BTSX, so the compile checks run whichever outputs are
+requested. Errors are JSON `{ "error": "..." }`: `400` for a malformed request,
+`413` above 256 KiB, `422` for input that is not valid TSX (with its parse
+`diagnostics`), `405` for anything but `POST`/`OPTIONS`. CORS is open to any
+origin. The handler lives in [`src/lib/api/converter.ts`](src/lib/api/converter.ts)
+and the Worker entry in [`worker/index.ts`](worker/index.ts); `bun run cf:dev`
+serves both locally.
 
 ## Example
 
@@ -178,6 +219,7 @@ the converter's golden fixtures.
 │   │   ├── tsx-btsx.ts           # Public converter entry point
 │   │   ├── tsrx.ts               # BTSX → TSRX → Octane compile check
 │   │   ├── metrics.ts            # Size metrics
+│   │   ├── api/converter.ts      # POST /api/converter handler
 │   │   ├── shiki.ts              # Syntax highlighting (incl. a BTSX grammar)
 │   │   └── icons/
 │   └── samples/                  # Bundled TSX samples
@@ -185,7 +227,8 @@ the converter's golden fixtures.
 ├── scripts/
 │   ├── validate.ts               # Staged toolchain validation
 │   └── edge-cases.ts             # Regression snippets for parser rules
-├── tests/converter.test.ts       # Behavioural tests
+├── worker/index.ts               # Cloudflare Worker: /api/* routes, assets otherwise
+├── tests/                        # Converter and API tests
 ├── converter/README.md           # Converter rule reference
 └── rspack.config.ts
 ```
@@ -236,6 +279,11 @@ A few non-obvious settings in [`rspack.config.ts`](rspack.config.ts):
   just above that (6 MiB), so real growth still produces a warning.
   `typescript.js`'s Node-only globals are mocked, and its one computed-`require`
   warning is suppressed, scoped to that file.
+
+- **Worker bundle.** [`wrangler.jsonc`](wrangler.jsonc) bundles the same
+  converter for the API. It aliases the same `node:` shims, minifies (about
+  1.6 MiB gzipped), and defines `process.browser` so TypeScript does not take
+  its Node code path in the Workers runtime.
 
 ## Contributing
 
