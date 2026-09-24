@@ -11,7 +11,9 @@
     "check": "bun run typecheck && bun test && bun run validate && bun run build",
     "test": "bun test",
     "validate": "bun run scripts/validate.ts",
-    "validate:types": "bun run scripts/validate.ts --types"
+    "validate:types": "bun run scripts/validate.ts --types",
+    "cf:dev": "bun run build && wrangler dev",
+    "deploy": "bun run build && wrangler deploy"
   },
   "dependencies": {
     "@octanejs/base-ui": "^0.1.55",
@@ -28,14 +30,15 @@
     "typescript": "5.9.3"
   },
   "devDependencies": {
-    "@types/node": "^26.6.2",
-    "@tsrx/typescript-plugin": "0.4.8",
-    "tailwindcss": "^4.3.3",
-    "@rspack/core": "^2.2.7",
-    "@rspack/cli": "^2.2.7",
-    "@rspack/dev-server": "^2.2.1",
     "@octanejs/rspack-plugin": "0.1.52",
+    "@rspack/cli": "^2.2.7",
+    "@rspack/core": "^2.2.7",
+    "@rspack/dev-server": "^2.2.1",
     "@tailwindcss/postcss": "^4.3.3",
-    "postcss-loader": "^8.2.1"
+    "@tsrx/typescript-plugin": "0.4.8",
+    "@types/node": "^26.6.2",
+    "postcss-loader": "^8.2.1",
+    "tailwindcss": "^4.3.3",
+    "wrangler": "^4.137.0"
   }
 }

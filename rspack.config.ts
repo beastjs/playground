@@ -1,4 +1,4 @@
-import { HtmlRspackPlugin, NormalModuleReplacementPlugin, type Configuration } from '@rspack/core'
+import { CopyRspackPlugin, HtmlRspackPlugin, NormalModuleReplacementPlugin, type Configuration } from '@rspack/core'
 import { beastOctane } from 'beast-tsrx/rspack'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,12 +10,16 @@ const config: Configuration = {
   context: root,
   entry: './src/main.ts',
   output: {
-    publicPath: '/'
+    publicPath: '/',
+    // Drop chunks from earlier builds so `dist/` holds only what gets deployed.
+    clean: true
   },
   experiments: { css: true },
   module: { rules: [{ test: /\.css$/u, type: 'css', use: ['postcss-loader'] }] },
   plugins: [
     new HtmlRspackPlugin({ template: './index.html' }),
+    // index.html links `/favicon.ico`, which lives at the project root.
+    new CopyRspackPlugin({ patterns: [{ from: 'favicon.ico' }] }),
     // The TSRX panel runs `beast-tsrx`'s compiler in the browser. Its package
     // entry also re-exports a file-system project builder, whose `node:`
     // imports have no browser build; these shims stand in for them.
