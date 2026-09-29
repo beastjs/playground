@@ -15,9 +15,9 @@ export function closeMissingHtmlTags(source: string): string {
     const tree = ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
     const diagnostics = (tree as ts.SourceFile & { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? []
     if (diagnostics.length === 0) return source
-    // Never use tag recovery to hide an unrelated syntax error.
-    if (diagnostics.some((d) => d.code !== 17008 && d.code !== 17002 &&
-      !(d.code === 1005 && ts.flattenDiagnosticMessageText(d.messageText, ' ') === "'</' expected."))) return source
+    // A missing close can also make TypeScript read the function's final `}` as
+    // JSX text and report an unrelated-looking "Unexpected token" diagnostic.
+    if (!diagnostics.some((d) => d.code === 17008 || d.code === 17002)) return source
 
     let edit: { start: number; end: number; text: string } | undefined
     const visit = (node: ts.Node): void => {
@@ -27,6 +27,23 @@ export function closeMissingHtmlTags(source: string): string {
         if (/^[a-z][a-zA-Z0-9-]*$/u.test(name)) {
           if (VOID_ELEMENTS.has(name)) {
             edit = { start: node.openingElement.end - 1, end: node.openingElement.end - 1, text: '/' }
+            return
+          }
+          // A pasted, indented sibling can be swallowed as a child when an
+          // earlier close is missing. Equal indentation gives us a boundary
+          // that tag matching alone cannot reveal (e.g. two sibling divs).
+          const openingColumn = tree.getLineAndCharacterOfPosition(node.openingElement.getStart(tree)).character
+          const indentedSibling = node.children.find((child) => {
+            if (!ts.isJsxElement(child) || child.openingElement.tagName.getText(tree) !== name) return false
+            const childStart = child.openingElement.getStart(tree)
+            const { line, character } = tree.getLineAndCharacterOfPosition(childStart)
+            const parentLine = tree.getLineAndCharacterOfPosition(node.openingElement.getStart(tree)).line
+            return line > parentLine && character === openingColumn &&
+              source.slice(source.lastIndexOf('\n', childStart - 1) + 1, childStart).trim() === ''
+          })
+          if (indentedSibling) {
+            const start = indentedSibling.getStart(tree)
+            edit = { start, end: start, text: `</${name}>\n${' '.repeat(openingColumn)}` }
             return
           }
           // HTML closes these elements when another of the same kind starts.

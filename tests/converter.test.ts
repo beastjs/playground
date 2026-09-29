@@ -95,6 +95,38 @@ describe('input handling', () => {
     expect(() => convertTsx('<Widget>hello')).toThrow(BtsxConversionError)
   })
 
+  test('repairs an omitted div close in an indented component', () => {
+    const result = convertTsx(`export function Card({
+  user,
+  unreadCount,
+  messages
+}: {
+  user: { name: string; id: string; isAdmin: boolean }
+  unreadCount: number
+  messages: { id: string; text: string }[]
+}) {
+  return (
+    <div className='card'>
+      <div className='header'>
+        <h1>Welcome, {user.name}</h1>
+      
+      <div className='body'>
+        {user.isAdmin ? <AdminPanel userId={user.id} /> : <p>You have {unreadCount} new messages</p>}
+        <ul className='messages'>
+          {messages.map((message, i) => (
+            <li className='message' key={message.id}>
+              {message.text}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}`)
+    expect(result.code).toContain('  .header\n    h1 Welcome, #{user.name}\n  .body')
+    expect(compileToTsrx(result.code)).toMatchObject({ ok: true, octaneError: null })
+  })
+
   test('pasted HTML comments are removed while string style props survive', () => {
     const result = convertTsx('<button type="button" style="display: flex;  1.67772e+07px; appearance: button;">BTSX<!----></button>')
     expect(result.code).toBe('button(type="button" style="display: flex;  1.67772e+07px; appearance: button;") BTSX\n')
