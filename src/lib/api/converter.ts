@@ -1,6 +1,6 @@
-import { BtsxConversionError, convertTsx, type ConversionDiagnostic } from '../tsx-btsx'
 import { measure, type Metrics } from '../metrics'
 import { compileToTsrx } from '../tsrx'
+import { BtsxConversionError, convertTsx, type ConversionDiagnostic } from '../tsx-btsx'
 
 /**
  * `POST /api/converter`: the playground's pipeline as an HTTP endpoint. TSX in;
@@ -18,7 +18,7 @@ export type OutputKind = 'btsx' | 'tsrx'
 const OUTPUT_KINDS: readonly OutputKind[] = ['btsx', 'tsrx']
 
 /** Large enough for any real component file, small enough to bound CPU per request. */
-export const MAX_SOURCE_BYTES = 256 * 1024
+export const MAX_SOURCE_BYTES = 512 * 1024
 
 export interface CompileStatus {
   ok: boolean
@@ -132,7 +132,9 @@ function convert(code: string, outputs: ReadonlySet<OutputKind>): Response {
     response.outputs.btsx = { code: btsx.code, metrics: measure(btsx.code), diagnostics: btsx.diagnostics }
   }
   if (outputs.has('tsrx')) {
-    response.outputs.tsrx = tsrx.ok ? { code: tsrx.output, metrics: measure(tsrx.output) } : { code: null, metrics: null }
+    response.outputs.tsrx = tsrx.ok
+      ? { code: tsrx.output, metrics: measure(tsrx.output) }
+      : { code: null, metrics: null }
   }
   return json(response)
 }
