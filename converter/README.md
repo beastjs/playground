@@ -40,9 +40,10 @@ one with its position in the TSX. The codes are a closed union
 The playground shows them as a warning badge on the BTSX panel.
 
 The TypeScript parser is error-tolerant and will happily return a tree full of
-garbage for garbage input. `convertTsxToBtsx` checks the parse diagnostics up
-front and throws `BtsxConversionError` (carrying `line:col message` strings in
-`.diagnostics`) rather than emitting a nonsensical conversion.
+garbage for garbage input. The converter first closes omitted HTML end tags and
+normalizes HTML void elements such as `<input>`. It then checks the parse
+diagnostics and throws `BtsxConversionError` (carrying `line:col message`
+strings in `.diagnostics`) if the input still cannot be parsed.
 
 Requires the `typescript` package as a dependency (`npm install typescript`).
 Written in strict TypeScript — no `any`.

@@ -5,6 +5,8 @@ import type { PanelId, PanelVisibility, WorkspacePanels } from './types'
 
 module
   const ORDER: PanelId[] = ['tsx', 'btsx', 'tsrx']
+  const BTSX_CLASS = 'bg-[radial-gradient(circle_at_88%_10%,rgba(255,255,255,0.07),transparent_28rem),linear-gradient(145deg,#2a2b29,#111211_72%)]'
+  const TSRX_CLASS = 'bg-[radial-gradient(circle_at_88%_10%,rgba(255,255,255,0.07),transparent_28rem),linear-gradient(105deg,#111211,#ff415a_92%)]'
 
 props { panels, visible }: { panels: WorkspacePanels; visible: PanelVisibility }
 setup
@@ -21,23 +23,17 @@ Group(
   ~ defaultLayout={layout}
   ~ )
   if visible.tsx
-    Panel(id="tsx" minSize="22%")
+    Panel(id="tsx" minSize="22%" className='overflow-hidden md:h-[88.42dvh]')
       SourcePanel({...panels.source})
   if visible.btsx
     fragment
       if visible.tsx
         Separator(className='panel-separator' aria-label="Resize panels")
-      Panel(id="btsx" minSize="22%" className='overflow-hidden')
-        OutputPanel(
-          ~ {...panels.btsx}
-          ~ className='bg-[radial-gradient(circle_at_88%_10%,rgba(255,255,255,0.07),transparent_28rem),linear-gradient(145deg,#2a2b29,#111211_72%)]'
-          ~ )
+      Panel(id="btsx" minSize="22%" className='overflow-hidden md:h-[88.42dvh]')
+        OutputPanel({...panels.btsx} className={BTSX_CLASS})
   if visible.tsrx
     fragment
       if visible.tsx || visible.btsx
         Separator(className='panel-separator' aria-label="Resize panels")
-      Panel(id="tsrx" minSize="22%" className='overflow-hidden')
-        OutputPanel(
-          ~ {...panels.tsrx}
-          ~ className='bg-[radial-gradient(circle_at_88%_10%,rgba(255,255,255,0.07),transparent_28rem),linear-gradient(105deg,#111211,#ff415a_92%)]'
-          ~ )
+      Panel(id="tsrx" minSize="22%" className='overflow-hidden md:h-[88.42dvh]')
+        OutputPanel({...panels.tsrx} className={TSRX_CLASS})

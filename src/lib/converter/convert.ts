@@ -1,7 +1,7 @@
 /** The conversion entry point: one pass over the top-level statements, assembled in the order Beast requires. */
 
 import ts from 'typescript'
-import { getLeadingLineComments, isDirective, isReferencedElsewhere } from './ast'
+import { getLeadingLineComments, isDirective, isJsxLike, isReferencedElsewhere, unwrapParens } from './ast'
 import {
   findRootComponentIndex,
   getComponentDeclaration,
@@ -16,6 +16,8 @@ import type { ConvertContext } from './context'
 import { renderModuleMember } from './declarations'
 import { assertParsed, report, type ConversionDiagnostic } from './diagnostics'
 import { collectContexts, collectUnwrappedReact, renderImportDeclaration } from './imports'
+import { emitRootJsx } from './jsx'
+import { closeMissingHtmlTags, stripHtmlComments } from './input'
 import { requoteSource } from './print'
 import { collectModuleScope } from './scope'
 import { ensureSemicolon, indentLines } from './text'
@@ -36,6 +38,7 @@ export interface ConversionResult {
  * @throws {BtsxConversionError} when the input does not parse as TSX.
  */
 export function convertTsx(source: string): ConversionResult {
+  source = closeMissingHtmlTags(stripHtmlComments(source))
   const sourceFile = ts.createSourceFile('input.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   assertParsed(sourceFile)
   const moduleScope = collectModuleScope(sourceFile.statements)
@@ -106,6 +109,14 @@ function convertStatements(ctx: ConvertContext): string {
       continue
     }
 
+    // Pasted JSX is already the file's template; it needs no component wrapper
+    // and must not be printed as a JSX expression inside a module block.
+    if (ts.isExpressionStatement(statement) && isJsxLike(unwrapParens(statement.expression))) {
+      main.push(...leadingComments, ...emitRootJsx(ctx, statement.expression))
+      components.push(...ctx.lifted.splice(0, ctx.lifted.length).flat())
+      continue
+    }
+
     // `function Card(props: A): Element;` above the implementation. A component
     // block has no overloads, so the signature goes and the implementation's
     // own parameter type stands for it.
@@ -169,7 +180,12 @@ function convertStatements(ctx: ConvertContext): string {
     outputLines.push(...indentLines(moduleMembers, 1))
   }
   outputLines.push(...components)
-  if (main.length > 0) outputLines.push('', ...main)
+  if (main.length > 0) {
+    // Preserve component output formatting while letting a pasted element
+    // start directly with its selector.
+    if (outputLines.length > 0 || rootDeclaration !== null) outputLines.push('')
+    outputLines.push(...main)
+  }
 
   return outputLines.join('\n') + '\n'
 }

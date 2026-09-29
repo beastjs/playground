@@ -78,6 +78,132 @@ export default function A() {
 })
 
 describe('input handling', () => {
+  test.each([
+    ['<div><p>Hello</div>', 'div\n  p Hello\n'],
+    ['<ul><li>one<li>two</ul>', 'ul\n  li one\n  li two\n'],
+    ['<div><span>hi', 'div\n  span hi\n'],
+    ['<input>', 'input\n'],
+    ['<div><input><span>Hi</span></div>', 'div\n  input\n  span Hi\n'],
+    ['export default function A() { return <div><span>hi</div> }', '\ndiv\n  span hi\n']
+  ])('repairs missing HTML tags in %s', (source, expected) => {
+    const result = convertTsx(source)
+    expect(result.code).toBe(expected)
+    expect(compileToTsrx(result.code)).toMatchObject({ ok: true, octaneError: null })
+  })
+
+  test('a missing component tag still reports a parse error', () => {
+    expect(() => convertTsx('<Widget>hello')).toThrow(BtsxConversionError)
+  })
+
+  test('pasted HTML comments are removed while string style props survive', () => {
+    const result = convertTsx('<button type="button" style="display: flex;  1.67772e+07px; appearance: button;">BTSX<!----></button>')
+    expect(result.code).toBe('button(type="button" style="display: flex;  1.67772e+07px; appearance: button;") BTSX\n')
+    expect(result.diagnostics).toEqual([])
+    expect(compileToTsrx(result.code)).toMatchObject({ ok: true, octaneError: null })
+  })
+
+  test('named, multiline, repeated and surrounding HTML comments disappear', () => {
+    const result = convertTsx('<!-- before --><button>A<!-- marker -->B<!-- first\nsecond --><span>OK</span><!----></button><!-- after -->')
+    expect(result.code).not.toContain('<!--')
+    expect(result.code).toContain('  span OK')
+    expect(result.code).not.toContain('marker')
+    expect(compileToTsrx(result.code)).toMatchObject({ ok: true, octaneError: null })
+    expect(convertTsxToBtsx('<p>A<!---->B</p>')).toBe('p AB\n')
+  })
+
+  test('HTML comment syntax inside literals and TS comments is preserved', () => {
+    const result = convertTsx(`const marker = "<!-- string -->"
+const template = \`<!-- template -->\`
+const pattern = /<!-- regex -->/
+// <!-- line comment -->
+export default function A() {
+  return <button title="<!-- attribute -->">{"<!-- expression -->"}{/* <!-- JSX comment --> */}<!----></button>
+}`)
+    for (const content of ['<!-- string -->', '<!-- template -->', '<!-- regex -->', '<!-- line comment -->', '<!-- attribute -->', '<!-- expression -->']) {
+      expect(result.code).toContain(content)
+    }
+    expect(result.code).not.toContain('<!---->')
+    expect(result.diagnostics).toEqual([])
+    expect(compileToTsrx(result.code)).toMatchObject({ ok: true, octaneError: null })
+  })
+
+  test('a pasted element begins with its selector and preserves its child', () => {
+    const result = convertTsx(`<button type="button"><span className="items-center flex justify-center mr-3 ">OK</span></button>`)
+    expect(result.code).toBe('button(type="button")\n  span(className="items-center flex justify-center mr-3 ") OK\n')
+    expect(result.diagnostics).toEqual([])
+    expect(compileToTsrx(result.code)).toMatchObject({ ok: true, octaneError: null })
+  })
+
+  test.each(['<button />', '(<button />);', '<>{/* comment */}<button /></>'])(
+    'a standalone single root needs no wrapper: %s', (source) => {
+      expect(convertTsxToBtsx(source)).toBe('button\n')
+    }
+  )
+
+  test.each([
+    'style={{ padding: "1rem", opacity: 0.5, "--accent": "purple" }}',
+    'style={styles}',
+    'style={{ ...styles, color: active ? "red" : "blue" }}'
+  ])('inline style props remain expressions: %s', (attribute) => {
+    for (const source of [
+      `<button ${attribute}>OK</button>`,
+      `export default function A() { return <button ${attribute}>OK</button> }`
+    ]) {
+      const result = convertTsx(source)
+      expect(result.code).toContain(attribute)
+      expect(result.diagnostics).toEqual([])
+      expect(compileToTsrx(result.code)).toMatchObject({ ok: true, octaneError: null })
+    }
+  })
+
+  test('a pasted fragment keeps scoped CSS beside its element', () => {
+    const result = convertTsx(`<>
+  <article className="card" {...cardProps}>
+    <h2>{title}</h2>
+    <p>Scoped styling follows this component.</p>
+  </article>
+  <style>{/* scoped CSS */}{(\`
+    .card {
+      padding: 1rem;
+    }
+
+    .card h2 {
+      color: rebeccapurple;
+    }
+
+    :global(body) {
+      margin: 0;
+    }
+  \`)}</style>
+</>`)
+    expect(result.code).toBe(`fragment
+  article.card({...cardProps})
+    h2 #{title}
+    p Scoped styling follows this component.
+  style
+    .card {
+      padding: 1rem;
+    }
+
+    .card h2 {
+      color: rebeccapurple;
+    }
+
+    :global(body) {
+      margin: 0;
+    }
+`)
+    expect(result.diagnostics).toEqual([])
+    expect(compileToTsrx(result.code)).toMatchObject({ ok: true, octaneError: null })
+  })
+
+  test('standalone JSX can lift element props before the template', () => {
+    const result = convertTsx('<Toggle icon={<b>Icon</b>} />')
+    expect(result.code).toContain('component Icon\n  b Icon')
+    expect(result.code).toContain('Toggle(icon={createElement(Icon, {})})')
+    expect(compileToTsrx(result.code)).toMatchObject({ ok: true, octaneError: null })
+  })
+
   test('invalid TSX throws with located diagnostics', () => {
     expect(() => convertTsxToBtsx('export default function A( { return <div> }')).toThrow(BtsxConversionError)
     try {

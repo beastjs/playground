@@ -354,6 +354,7 @@ export function meaningfulChildren(children: ts.NodeArray<ts.JsxChild>): ts.JsxC
     if (ts.isJsxText(child)) {
       return normalizeJsxText(child.text).length > 0
     }
+    if (ts.isJsxExpression(child) && !child.expression) return false
     return true
   })
 }
@@ -391,7 +392,9 @@ function isInlineTextRun(ctx: ConvertContext, children: ts.JsxChild[]): boolean 
   const hasElement = children.some((c) => ts.isJsxElement(c) || ts.isJsxSelfClosingElement(c) || ts.isJsxFragment(c))
   if (hasElement) return false
   const exprChildren = children.filter((c) => ts.isJsxExpression(c))
-  if (exprChildren.length === 0) return false // pure text single child already handled elsewhere / trivial
+  // Ignored comments can leave adjacent text nodes; joining them keeps their
+  // original spacing instead of creating separate template text lines.
+  if (exprChildren.length === 0) return children.every(ts.isJsxText)
   const hasText = children.some((c) => ts.isJsxText(c))
   // Every expression child (if more than one) must be simple; block constructs force the block layout.
   return exprChildren.every((c) => isSimpleExprChild(ctx, c, hasText))

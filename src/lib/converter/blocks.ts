@@ -195,7 +195,7 @@ export function emitStyleBlock(ctx: ConvertContext, node: ts.JsxElement, indent:
   let css: string | null = null
   if (ts.isJsxText(child)) css = child.text
   else if (ts.isJsxExpression(child) && child.expression) {
-    const expr = child.expression
+    const expr = unwrapParens(child.expression)
     if (ts.isNoSubstitutionTemplateLiteral(expr) || ts.isStringLiteral(expr)) css = expr.text
   }
   if (css === null) return null
