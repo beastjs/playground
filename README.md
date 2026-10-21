@@ -1,9 +1,11 @@
-# Beast Converter
+# Beast tsx-btsx-tsrx converter
 
 An in-browser playground that converts React **TSX** into
 [Beast](https://www.npmjs.com/package/beast-tsrx) **BTSX**, then compiles the
 result to **TSRX** and checks it against [Octane](https://octanejs.dev/)'s
 compiler. It shows every stage side by side as you type.
+
+![Mural](public/converter-ss.png)
 
 ```text
 TSX (React)  ──convertTsx──▶  BTSX (Beast)  ──Beast codegen──▶  TSRX  ──▶  Octane compiler ✓/✗
@@ -45,7 +47,7 @@ runtime.
   the character reduction from TSX to BTSX.
 - **Bundled samples.** Card, Provider, Dashboard, Palette, Feed and
   Boundary, each covering a different set of conversion rules. Pick one from
-  the *Examples* menu.
+  the _Examples_ menu.
 - **Adaptive layout.**
   - **Desktop:** three resizable panels. A header toggle group shows or hides
     each one.
@@ -72,18 +74,18 @@ bun run dev --port 8082
 
 ## Scripts
 
-| Command | Description |
-| --- | --- |
-| `bun run dev` | Start the development server with hot reload. |
-| `bun run build` | Production build into `dist/`. |
-| `bun run preview` | Serve a production-mode build locally. |
-| `bun run typecheck` | Typecheck `.ts` and `.btsx` sources with `tsrx-tsc`. |
-| `bun test` | Behavioural tests for converter output and diagnostics. |
-| `bun run validate` | Push every sample and edge case through Beast's parser, Beast's codegen and Octane's compiler, and compare samples with their golden files. |
-| `bun run validate:types` | As above, and also typecheck the generated TSRX. |
-| `bun run cf:dev` | Build, then serve the site and the HTTP API with `wrangler dev`. |
-| `bun run deploy` | Build and deploy to Cloudflare Workers. |
-| `bun run check` | Typecheck, tests, validation and build. **Run before shipping.** |
+| Command                  | Description                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run dev`            | Start the development server with hot reload.                                                                                               |
+| `bun run build`          | Production build into `dist/`.                                                                                                              |
+| `bun run preview`        | Serve a production-mode build locally.                                                                                                      |
+| `bun run typecheck`      | Typecheck `.ts` and `.btsx` sources with `tsrx-tsc`.                                                                                        |
+| `bun test`               | Behavioural tests for converter output and diagnostics.                                                                                     |
+| `bun run validate`       | Push every sample and edge case through Beast's parser, Beast's codegen and Octane's compiler, and compare samples with their golden files. |
+| `bun run validate:types` | As above, and also typecheck the generated TSRX.                                                                                            |
+| `bun run cf:dev`         | Build, then serve the site and the HTTP API with `wrangler dev`.                                                                            |
+| `bun run deploy`         | Build and deploy to Cloudflare Workers.                                                                                                     |
+| `bun run check`          | Typecheck, tests, validation and build. **Run before shipping.**                                                                            |
 
 ## Using the converter as a library
 
@@ -155,7 +157,7 @@ serves both locally.
 The `Card` sample, from TSX:
 
 ```tsx
-export function Card({ user, unreadCount, messages }: { /* … */ }) {
+export function Card({ user, unreadCount, messages }: {/* … */}) {
   return (
     <div className='card'>
       <div className='header'>
@@ -165,7 +167,9 @@ export function Card({ user, unreadCount, messages }: { /* … */ }) {
         {user.isAdmin ? <AdminPanel userId={user.id} /> : <p>You have {unreadCount} new messages</p>}
         <ul className='messages'>
           {messages.map((message, i) => (
-            <li className='message' key={message.id}>{message.text}</li>
+            <li className='message' key={message.id}>
+              {message.text}
+            </li>
           ))}
         </ul>
       </div>
@@ -252,14 +256,14 @@ check:
 
 ## Toolchain
 
-| Package | Version | Role |
-| --- | --- | --- |
-| `beast-tsrx` | 0.3.2 | BTSX parser, codegen and the rspack integration |
-| `octane` | 0.4.3 | Runtime and compiler |
-| `@octanejs/rspack-plugin` | 0.1.52 | Octane bundler integration |
-| `@rspack/core` | 2.x | Bundler |
-| `tailwindcss` | 4.x | Styling |
-| `typescript` | 5.9.3 | AST for the converter, bundled into the app |
+| Package                   | Version | Role                                            |
+| ------------------------- | ------- | ----------------------------------------------- |
+| `beast-tsrx`              | 0.3.2   | BTSX parser, codegen and the rspack integration |
+| `octane`                  | 0.4.3   | Runtime and compiler                            |
+| `@octanejs/rspack-plugin` | 0.1.52  | Octane bundler integration                      |
+| `@rspack/core`            | 2.x     | Bundler                                         |
+| `tailwindcss`             | 4.x     | Styling                                         |
+| `typescript`              | 5.9.3   | AST for the converter, bundled into the app     |
 
 UI primitives come from `@octanejs/base-ui`, `@octanejs/radix` and
 `@octanejs/resizable-panels`.
